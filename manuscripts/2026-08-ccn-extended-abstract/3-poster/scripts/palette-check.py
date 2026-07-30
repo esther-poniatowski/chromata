@@ -261,9 +261,11 @@ MARKS: tuple[str, ...] = (
 
 #: Fills and washes: exempt from the contrast floor, and required to carry a saturated stroke.
 #: `compplane' is here and not in MARKS: the components plane is a wash under the vectors, and it
-#: carries `planeedge' as its stroke.
+#: carries `planeedge' as its stroke. `questionwash' is a ground rather than a mark for the same
+#: reason -- it is listed so its lightness against `surface' and the page is reported in every
+#: scheme, since a wash that drops below the page ground reads as a hole rather than as a card.
 FILLS: tuple[str, ...] = (
-    "inputpale", "recurpale", "netfill", "surface", "bordersubtle", "compplane",
+    "inputpale", "recurpale", "netfill", "surface", "bordersubtle", "compplane", "questionwash",
 )
 
 GROUND = "posterbg"
