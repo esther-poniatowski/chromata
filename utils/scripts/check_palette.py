@@ -10,7 +10,8 @@ Usage, from the workspace root (never from the base conda environment)::
 
 The palette files are read in order, so a later file overrides an earlier one; that order is how a
 candidate scheme is measured on top of base values. The exit status is 1 when a binding test fails,
-so the command can gate a build.
+so the command can gate a build; a mark that the specification lists under ``accepted`` does not
+fail it.
 """
 
 from __future__ import annotations
@@ -75,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     text, failures = report(palette, tests, label)
     print(text)
-    print(f"\n{failures} binding failure(s).")
+    print(f"\n{failures} binding failure(s), {len(tests.accepted)} accepted.")
     return 1 if failures else 0
 
 

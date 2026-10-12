@@ -10,6 +10,9 @@ The acceptance tests applied to a palette.
    distinction on a non-colour channel.
 
 Only the trichromatic separation and the contrast floor are binding; the redundancy test reports.
+A mark listed under ``accepted`` is reported under the contrast floor without counting as a
+failure. An acceptance that no longer applies counts as one: a stale acceptance would otherwise
+license a later regression of the same token.
 """
 
 from __future__ import annotations
@@ -44,6 +47,9 @@ def report(palette: dict[str, str], tests: AcceptanceTests, label: str) -> tuple
     missing = sorted(tests.named_tokens() - palette.keys())
     if missing:
         lines.append(f"tokens named by the tests but absent from the palette: {', '.join(missing)}\n")
+    for token in sorted(set(tests.accepted) - set(tests.marks)):
+        lines.append(f"accepted token `{token}' is not a mark: the acceptance has nothing to license")
+        failures += 1
     if tests.ground not in palette:
         lines.append(f"the ground token `{tests.ground}' is undefined: contrast cannot be measured")
         return "\n".join(lines), 1
@@ -59,7 +65,13 @@ def report(palette: dict[str, str], tests: AcceptanceTests, label: str) -> tuple
         ratio = contrast(value, palette[tests.ground])
         flag = ""
         if token in tests.marks and ratio < tests.contrast_floor:
-            flag = f"  << under {tests.contrast_floor:g}:1"
+            if token in tests.accepted:
+                flag = f"  -- accepted: {tests.accepted[token]}"
+            else:
+                flag = f"  << under {tests.contrast_floor:g}:1"
+                failures += 1
+        elif token in tests.accepted:
+            flag = "  << accepted, but no longer under the floor: drop the acceptance"
             failures += 1
         lines.append(
             f"{token:<16}{value:>8}{lightness:>10.3f}{math.hypot(a, b):>9.3f}{ratio:>8.2f}:1{flag}"

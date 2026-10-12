@@ -18,6 +18,10 @@ file holds two tables, each optional::
     pair = ["outplane", "outplaneannot"]
     channel = "line style"
 
+    [[tests.accepted]]           # marks accepted under the contrast floor, each with its reason
+    token = "inputlight"
+    reason = "drawn only inside framed cell grids"
+
     [recolour]
     targets = ["comp1", "comp2"] # the two tokens the pictures are repainted into
 
@@ -50,6 +54,7 @@ class AcceptanceTests:
     contrast_floor: float = 3.0
     groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
     exempt: dict[frozenset[str], str] = field(default_factory=dict)
+    accepted: dict[str, str] = field(default_factory=dict)
     marks: tuple[str, ...] = ()
     fills: tuple[str, ...] = ()
 
@@ -112,12 +117,24 @@ def _tests(table: dict[str, object]) -> AcceptanceTests:
         if len(pair) != 2 or not isinstance(channel, str):
             raise SpecError("[[tests.exempt]]: `pair' takes two tokens and `channel' names the channel")
         exempt[frozenset(pair)] = channel
+    accepted: dict[str, str] = {}
+    accepted_raw = table.get("accepted", [])
+    if not isinstance(accepted_raw, list):
+        raise SpecError("[[tests.accepted]]: expected an array of tables")
+    for entry in accepted_raw:
+        if not isinstance(entry, dict):
+            raise SpecError("[[tests.accepted]]: expected a table with `token' and `reason'")
+        token, reason = entry.get("token"), entry.get("reason")
+        if not isinstance(token, str) or not isinstance(reason, str) or not reason.strip():
+            raise SpecError("[[tests.accepted]]: `token' names one mark and `reason' states why")
+        accepted[token] = reason
     return AcceptanceTests(
         ground=ground,
         de_floor=float(table.get("de_floor", 0.15)),  # type: ignore[arg-type]
         contrast_floor=float(table.get("contrast_floor", 3.0)),  # type: ignore[arg-type]
         groups=groups,
         exempt=exempt,
+        accepted=accepted,
         marks=_strings(table.get("marks", []), "[tests] marks"),
         fills=_strings(table.get("fills", []), "[tests] fills"),
     )

@@ -92,6 +92,7 @@ def test_load_spec_reads_both_tables(tmp_path: Path) -> None:
         "[recolour]\ntargets = ['a']\n",                              # one target
         "[recolour]\ntargets = ['a','b']\n[[recolour.rows]]\nstrategy='blur'\nfiles=['1','2','3']\n",
         "[recolour]\ntargets = ['a','b']\n[[recolour.rows]]\nstrategy='unmix'\nfiles=['1','2']\n",
+        "[tests]\nground = 'bg'\n[[tests.accepted]]\ntoken = 'pale'\n",   # no reason
     ],
 )
 def test_load_spec_rejects_malformed_tables(tmp_path: Path, text: str) -> None:
@@ -115,6 +116,17 @@ def test_report_counts_binding_failures_once_and_honours_exemptions() -> None:
     # although the pair sits in two groups; red / blue is exempt.
     assert failures == 2
     assert "-- line style" in text and "<< under 3:1" in text
+
+
+def test_report_honours_accepted_marks_and_flags_stale_acceptances() -> None:
+    palette = parse_palette(PALETTE)
+    accepted = AcceptanceTests(ground="bg", marks=("dark", "pale"), accepted={"pale": "framed"})
+    text, failures = report(palette, accepted, "toy")
+    assert failures == 0 and "-- accepted: framed" in text
+    # An acceptance of a passing mark, or of a token that is not a mark, licenses nothing.
+    stale = AcceptanceTests(ground="bg", marks=("dark",), accepted={"dark": "x", "wash": "y"})
+    text, failures = report(palette, stale, "toy")
+    assert failures == 2 and "drop the acceptance" in text and "is not a mark" in text
 
 
 def test_report_fails_without_a_ground() -> None:
@@ -162,6 +174,11 @@ def test_check_palette_exit_codes(tmp_path: Path) -> None:
     spec = tmp_path / "palette.toml"
     spec.write_text(SPEC, encoding="utf-8")
     assert check_palette.main(["--palette", str(values), "--spec", str(spec)]) == 1
+    passing = tmp_path / "passing.toml"
+    passing.write_text(
+        "[tests]\nground = 'bg'\nmarks = ['dark', 'pale']\n"
+        "[[tests.accepted]]\ntoken = 'pale'\nreason = 'framed'\n", encoding="utf-8")
+    assert check_palette.main(["--palette", str(values), "--spec", str(passing)]) == 0
     assert check_palette.main(["--palette", str(tmp_path / "absent.tex")]) == 2
     proof = tmp_path / "proof.tex"
     assert check_palette.main(["--palette", str(values), "--emit-proof", str(proof)]) == 0
