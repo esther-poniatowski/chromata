@@ -1,0 +1,218 @@
+# Schema of a colour palette, written as JSON Schema (draft 2020-12) in YAML.
+#
+# This file is the single source of truth for the palette format. A palette file is named
+# palette.yml and sits beside the sources that load it. utils/scripts/build_palette.py
+# validates it against this schema and generates its LaTeX layers and its CSS blocks;
+# utils/scripts/check_palette.py measures it against its acceptance tests.
+
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: palette.schema.yaml
+title: Palette
+description: >-
+  A palette file defines every colour of one or more documents. Each token carries a value
+  and the use that it marks, inside a layer that can be retuned alone. Roles bind the names
+  that call sites use to tokens, modes override token values for another rendering, and the
+  tests state the separation and contrast that the tokens must reach.
+type: object
+additionalProperties: false
+required: [schema_version, layers]
+properties:
+  schema_version:
+    const: 1
+  extends:
+    type: string
+    pattern: '^(?!/)(.*/)?palette\.yml$'
+    description: >-
+      The path from the vault root to the palette whose tokens and roles this palette may
+      name. The documents load the extended palette before this one.
+  legacy_hue_names:
+    type: string
+    minLength: 1
+    description: >-
+      The reason why the tokens of this palette keep a name stating their hue, with the task
+      that renames them. Without this key, a token name containing a hue word is an error.
+  layers:
+    type: object
+    minProperties: 1
+    propertyNames: {$ref: '#/$defs/name'}
+    additionalProperties: {$ref: '#/$defs/layer'}
+    description: >-
+      The layers of the palette, in load order. Each token belongs to exactly one layer, so
+      that one layer can be retuned without shifting the others.
+  roles:
+    type: object
+    propertyNames: {$ref: '#/$defs/name'}
+    additionalProperties: {$ref: '#/$defs/role'}
+    description: >-
+      The names that call sites use, each bound to a token, in load order. A role is loaded
+      after every token, since LaTeX copies the value of a token when it binds the role.
+  modes:
+    type: object
+    additionalProperties: false
+    properties:
+      dark: {$ref: '#/$defs/mode'}
+    description: The renderings whose token values differ from the base values.
+  css:
+    type: object
+    propertyNames: {type: string, pattern: '^[a-z][a-z0-9-]*$'}
+    additionalProperties: {$ref: '#/$defs/name'}
+    description: >-
+      The CSS custom properties of the web pages, each bound to a token or a role, without
+      the leading dashes.
+  tests: {$ref: '#/$defs/tests'}
+  recolour: {$ref: '#/$defs/recolour'}
+
+$defs:
+  name:
+    type: string
+    pattern: '^[A-Za-z][A-Za-z0-9]*$'
+    description: A token or role name, letters and digits only, as LaTeX colour names require.
+  hex:
+    type: string
+    pattern: '^[0-9A-F]{6}$'
+    description: An sRGB value in uppercase hexadecimal, without the leading hash.
+  prose:
+    type: string
+    minLength: 1
+  layer:
+    type: object
+    additionalProperties: false
+    required: [gloss, tokens]
+    properties:
+      gloss:
+        $ref: '#/$defs/prose'
+        description: The purpose of the tokens of the layer, as a noun phrase.
+      note:
+        $ref: '#/$defs/prose'
+        description: The rules that bind every token of the layer, in complete sentences.
+      tokens:
+        type: object
+        minProperties: 1
+        propertyNames: {$ref: '#/$defs/name'}
+        additionalProperties: {$ref: '#/$defs/token'}
+  token:
+    type: object
+    additionalProperties: false
+    required: [value, use]
+    properties:
+      value: {$ref: '#/$defs/hex'}
+      use:
+        $ref: '#/$defs/prose'
+        description: The concept or the element that the token marks, as a noun phrase.
+      note:
+        $ref: '#/$defs/prose'
+        description: The constraint that fixed the value, in complete sentences.
+      pole:
+        $ref: '#/$defs/name'
+        description: The ladder of tints that the token belongs to, named after its source concept.
+      rung:
+        enum: [deep, core, bright, light, pale]
+        description: >-
+          The position of the token on its ladder, from the darkest to the lightest. Two
+          adjacent rungs are not distinct, so no test group may hold both.
+      contrast:
+        enum: [mark, fill]
+        description: >-
+          A mark is drawn as a line or a glyph and is bound by the contrast floor; a fill is a
+          wash or a ground, exempt from the floor, and drawn with a stroke.
+      below_floor:
+        $ref: '#/$defs/prose'
+        description: The reason why a mark is accepted under the contrast floor.
+    dependentRequired:
+      pole: [rung]
+      rung: [pole]
+      below_floor: [contrast]
+  role:
+    type: object
+    additionalProperties: false
+    required: [of, use]
+    properties:
+      of:
+        $ref: '#/$defs/name'
+        description: The token or role bound, or the LaTeX colour black or white.
+      tint:
+        type: integer
+        minimum: 1
+        maximum: 99
+        description: The percentage of the colour mixed with white.
+      use:
+        $ref: '#/$defs/prose'
+        description: The elements that call sites colour through the role, as a noun phrase.
+      note:
+        $ref: '#/$defs/prose'
+        description: The reason for the binding, in complete sentences.
+  mode:
+    type: object
+    additionalProperties: false
+    required: [gloss, values]
+    properties:
+      gloss: {$ref: '#/$defs/prose'}
+      values:
+        type: object
+        minProperties: 1
+        propertyNames: {$ref: '#/$defs/name'}
+        additionalProperties: {$ref: '#/$defs/hex'}
+  tests:
+    type: object
+    additionalProperties: false
+    required: [ground]
+    properties:
+      ground:
+        $ref: '#/$defs/name'
+        description: The page ground, against which a mark needs contrast.
+      de_floor:
+        type: number
+        exclusiveMinimum: 0
+        description: The minimal OKLab distance between two tokens that a reader must tell apart.
+      contrast_floor:
+        type: number
+        minimum: 1
+        description: The minimal WCAG contrast of a mark on the ground.
+      groups:
+        type: object
+        additionalProperties:
+          type: array
+          minItems: 2
+          items: {$ref: '#/$defs/name'}
+        description: The sets of tokens that can share one figure, so that a reader must tell them apart.
+      exempt:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [pair, channel]
+          properties:
+            pair:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items: {$ref: '#/$defs/name'}
+            channel:
+              $ref: '#/$defs/prose'
+              description: The non-colour channel that carries the distinction of the pair.
+  recolour:
+    type: object
+    additionalProperties: false
+    required: [targets, rows]
+    properties:
+      targets:
+        type: array
+        minItems: 2
+        maxItems: 2
+        items: {$ref: '#/$defs/name'}
+        description: The two tokens that the raster pictures are repainted into.
+      rows:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, strategy, files]
+          properties:
+            name: {type: string}
+            strategy: {enum: [unmix, rotate]}
+            files:
+              type: array
+              minItems: 3
+              maxItems: 3
+              items: {type: string}
+              description: Two single-colour pictures, then their mixture.

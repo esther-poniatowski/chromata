@@ -8,8 +8,10 @@ The acceptance tests applied to a palette.
 3. **Non-colour redundancy.** Test 1 is repeated under simulated colour-vision deficiency and under
    grayscale. A pair that separates only for trichromats is reported, and must carry its
    distinction on a non-colour channel.
+4. **Ladder limit.** Two adjacent rungs of one ladder are not distinct, so no group may hold both.
 
-Only the trichromatic separation and the contrast floor are binding; the redundancy test reports.
+The trichromatic separation, the contrast floor and the ladder limit are binding; the redundancy
+test reports.
 A mark listed under ``accepted`` is reported under the contrast floor without counting as a
 failure. An acceptance that no longer applies counts as one: a stale acceptance would otherwise
 license a later regression of the same token.
@@ -90,7 +92,15 @@ def report(palette: dict[str, str], tests: AcceptanceTests, label: str) -> tuple
                 for mode in VISION_MODES
             ]
             mark = ""
-            if (channel := tests.exempt.get(frozenset({x, y}))) is not None:
+            ladder_x, ladder_y = tests.ladder.get(x), tests.ladder.get(y)
+            adjacent = (ladder_x is not None and ladder_y is not None
+                        and ladder_x[0] == ladder_y[0] and abs(ladder_x[1] - ladder_y[1]) == 1)
+            if adjacent:
+                mark = f"  << adjacent rungs of `{ladder_x[0]}'"
+                if frozenset({x, y}) not in counted:
+                    counted.add(frozenset({x, y}))
+                    failures += 1
+            elif (channel := tests.exempt.get(frozenset({x, y}))) is not None:
                 mark = f"  -- {channel}"
             elif row[0] < tests.de_floor:
                 mark = f"  << under {tests.de_floor:g}"

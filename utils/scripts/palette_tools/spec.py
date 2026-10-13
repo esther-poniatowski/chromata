@@ -1,53 +1,51 @@
 """
-The consumer's specification of its palette: acceptance tests and recolouring rows.
+A palette file: its tokens, roles, modes, CSS names, acceptance tests and recolouring rows.
 
-A consumer writes one TOML file; nothing about any particular document lives in this package. The
-file holds two tables, each optional::
+A consumer writes one ``palette.yml`` under the format of ``utils/schemas/palette.schema.yaml``;
+nothing about any particular document lives in this package. Loading a file validates it against
+the schema, then checks what the schema cannot express: every name resolves, no name is declared
+twice, and no token or role states its hue unless the file declares ``legacy_hue_names``.
 
-    [tests]
-    ground = "posterbg"          # the page ground, against which marks need contrast
-    de_floor = 0.15              # minimal OKLab distance between two tokens a reader must tell apart
-    contrast_floor = 3.0         # minimal WCAG contrast of a graphical mark on the ground
-    marks = ["comp1", ...]       # tokens bound by the contrast floor
-    fills = ["surface", ...]     # washes and grounds: reported, exempt from the contrast floor
-
-    [tests.groups]               # sets whose members can share one figure
-    "components" = ["comp1", "comp2"]
-
-    [[tests.exempt]]             # pairs whose distinction rides on a non-colour channel
-    pair = ["outplane", "outplaneannot"]
-    channel = "line style"
-
-    [[tests.accepted]]           # marks accepted under the contrast floor, each with its reason
-    token = "inputlight"
-    reason = "drawn only inside framed cell grids"
-
-    [recolour]
-    targets = ["comp1", "comp2"] # the two tokens the pictures are repainted into
-
-    [[recolour.rows]]            # pictures made of two colours: two singles, then their mixture
-    name = "vision"
-    strategy = "unmix"           # or "rotate"
-    files = ["a.png", "b.png", "a-plus-b.png"]
+A palette may extend another one, whose tokens and roles it may then name. Its values are the
+values of the extended palette, then its own tokens, then the overrides of a candidate scheme, and
+finally its roles, which copy the values in force when they are bound, as LaTeX does.
 """
 
 from __future__ import annotations
 
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+
+import yaml
+from jsonschema import Draft202012Validator
+
+from palette_tools.colour import hex_to_srgb, srgb_to_hex
+from vault_paths import DEFAULT_ROOT, PALETTE_SCHEMA
 
 Strategy = Literal["unmix", "rotate"]
 
+#: Order of the rungs of a ladder, from the darkest to the lightest.
+RUNGS: tuple[str, ...] = ("deep", "core", "bright", "light", "pale")
+
+#: Colours that LaTeX defines without a palette, and that a role may bind.
+BUILTINS: dict[str, str] = {"black": "000000", "white": "FFFFFF"}
+
+#: Words naming a hue. A token or role containing one is named after its colour, not its use.
+HUE_WORDS: tuple[str, ...] = (
+    "red", "green", "blue", "orange", "yellow", "purple", "violet", "magenta", "cyan", "teal",
+    "brown", "gray", "grey", "gold", "olive", "amber", "indigo", "terra", "pink", "salmon",
+    "turquoise", "brick", "crimson", "navy", "maroon", "lime", "beige",
+)
+
 
 class SpecError(ValueError):
-    """Raised when a specification file is malformed."""
+    """Raised when a palette file is missing, malformed, or inconsistent."""
 
 
 @dataclass(frozen=True)
 class AcceptanceTests:
-    """The three acceptance tests of a palette, and the tokens each one binds."""
+    """The acceptance tests of a palette, and the tokens each one binds."""
 
     ground: str
     de_floor: float = 0.15
@@ -57,6 +55,8 @@ class AcceptanceTests:
     accepted: dict[str, str] = field(default_factory=dict)
     marks: tuple[str, ...] = ()
     fills: tuple[str, ...] = ()
+    #: ``token -> (pole, rung index)``, for the tokens placed on a ladder.
+    ladder: dict[str, tuple[str, int]] = field(default_factory=dict)
 
     def named_tokens(self) -> set[str]:
         """Every token the tests mention, for reporting tokens absent from the palette."""
@@ -84,109 +84,209 @@ class RecolourPlan:
 
 
 @dataclass(frozen=True)
+class Token:
+    """One colour value, with the use it marks."""
+
+    name: str
+    layer: str
+    value: str
+    use: str
+    note: str | None = None
+    pole: str | None = None
+    rung: str | None = None
+    contrast: str | None = None
+    below_floor: str | None = None
+
+
+@dataclass(frozen=True)
+class Layer:
+    """A set of tokens retuned together."""
+
+    name: str
+    gloss: str
+    note: str | None
+    tokens: tuple[Token, ...]
+
+
+@dataclass(frozen=True)
+class Role:
+    """A name used by call sites, bound to a token, a role or a LaTeX colour, possibly tinted."""
+
+    name: str
+    of: str
+    use: str
+    tint: int | None = None
+    note: str | None = None
+
+
+@dataclass(frozen=True)
 class PaletteSpec:
-    """A consumer's specification; either part may be absent."""
+    """A loaded palette file."""
 
-    tests: AcceptanceTests | None
-    recolour: RecolourPlan | None
+    path: Path
+    layers: tuple[Layer, ...]
+    roles: tuple[Role, ...] = ()
+    modes: dict[str, dict[str, str]] = field(default_factory=dict)
+    mode_glosses: dict[str, str] = field(default_factory=dict)
+    css: dict[str, str] = field(default_factory=dict)
+    tests: AcceptanceTests | None = None
+    recolour: RecolourPlan | None = None
+    base: PaletteSpec | None = None
+    legacy_hue_names: str | None = None
+
+    def tokens(self) -> dict[str, Token]:
+        """The tokens of this file, by name, in load order."""
+        return {t.name: t for layer in self.layers for t in layer.tokens}
+
+    def names(self) -> set[str]:
+        """Every token and role name that this file and the palettes it extends define."""
+        own = set(self.tokens()) | {r.name for r in self.roles}
+        return own | (self.base.names() if self.base else set())
+
+    def token_values(self, mode: str | None = None) -> dict[str, str]:
+        """``token -> RRGGBB`` before the roles: the extended palette first, then this file."""
+        values = self.base.values(mode) if self.base else {}
+        values.update({name: token.value for name, token in self.tokens().items()})
+        if mode is not None:
+            values.update(self.modes.get(mode, {}))
+        return values
+
+    def bind_roles(self, values: dict[str, str]) -> dict[str, str]:
+        """Bind the roles of this file onto ``values``, in load order, and return the result."""
+        out = dict(values)
+        for role in self.roles:
+            source = out.get(role.of, BUILTINS.get(role.of))
+            if source is None:
+                raise SpecError(f"{self.path}: role `{role.name}' binds unknown `{role.of}'")
+            if role.tint is None:
+                out[role.name] = source
+            else:
+                frac = role.tint / 100.0
+                r, g, b = hex_to_srgb(source)
+                out[role.name] = srgb_to_hex(tuple(c * frac + (1 - frac) for c in (r, g, b)))
+        return out
+
+    def values(self, mode: str | None = None) -> dict[str, str]:
+        """``name -> RRGGBB`` for every token and role, in the given mode."""
+        return self.bind_roles(self.token_values(mode))
 
 
-def _strings(value: object, where: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-        raise SpecError(f"{where}: expected a list of token names")
-    return tuple(value)
+def _schema_validator() -> Draft202012Validator:
+    with (DEFAULT_ROOT / PALETTE_SCHEMA).open(encoding="utf-8") as handle:
+        return Draft202012Validator(yaml.safe_load(handle))
 
 
-def _tests(table: dict[str, object]) -> AcceptanceTests:
-    ground = table.get("ground")
-    if not isinstance(ground, str):
-        raise SpecError("[tests] ground: expected a token name")
-    groups_raw = table.get("groups", {})
-    if not isinstance(groups_raw, dict):
-        raise SpecError("[tests.groups]: expected a table of token lists")
-    groups = {str(k): _strings(v, f"[tests.groups] {k}") for k, v in groups_raw.items()}
-    exempt: dict[frozenset[str], str] = {}
-    exempt_raw = table.get("exempt", [])
-    if not isinstance(exempt_raw, list):
-        raise SpecError("[[tests.exempt]]: expected an array of tables")
-    for entry in exempt_raw:
-        if not isinstance(entry, dict):
-            raise SpecError("[[tests.exempt]]: expected a table with `pair' and `channel'")
-        pair = _strings(entry.get("pair"), "[[tests.exempt]] pair")
-        channel = entry.get("channel")
-        if len(pair) != 2 or not isinstance(channel, str):
-            raise SpecError("[[tests.exempt]]: `pair' takes two tokens and `channel' names the channel")
-        exempt[frozenset(pair)] = channel
-    accepted: dict[str, str] = {}
-    accepted_raw = table.get("accepted", [])
-    if not isinstance(accepted_raw, list):
-        raise SpecError("[[tests.accepted]]: expected an array of tables")
-    for entry in accepted_raw:
-        if not isinstance(entry, dict):
-            raise SpecError("[[tests.accepted]]: expected a table with `token' and `reason'")
-        token, reason = entry.get("token"), entry.get("reason")
-        if not isinstance(token, str) or not isinstance(reason, str) or not reason.strip():
-            raise SpecError("[[tests.accepted]]: `token' names one mark and `reason' states why")
-        accepted[token] = reason
+def _hue_word(name: str) -> str | None:
+    lowered = name.lower()
+    return next((word for word in HUE_WORDS if word in lowered), None)
+
+
+def _tests(data: dict[str, Any], tokens: dict[str, Token]) -> AcceptanceTests:
     return AcceptanceTests(
-        ground=ground,
-        de_floor=float(table.get("de_floor", 0.15)),  # type: ignore[arg-type]
-        contrast_floor=float(table.get("contrast_floor", 3.0)),  # type: ignore[arg-type]
-        groups=groups,
-        exempt=exempt,
-        accepted=accepted,
-        marks=_strings(table.get("marks", []), "[tests] marks"),
-        fills=_strings(table.get("fills", []), "[tests] fills"),
+        ground=data["ground"],
+        de_floor=float(data.get("de_floor", 0.15)),
+        contrast_floor=float(data.get("contrast_floor", 3.0)),
+        groups={str(k): tuple(v) for k, v in data.get("groups", {}).items()},
+        exempt={frozenset(e["pair"]): e["channel"] for e in data.get("exempt", [])},
+        accepted={t.name: t.below_floor for t in tokens.values() if t.below_floor},
+        marks=tuple(t.name for t in tokens.values() if t.contrast == "mark"),
+        fills=tuple(t.name for t in tokens.values() if t.contrast == "fill"),
+        ladder={t.name: (t.pole, RUNGS.index(t.rung))
+                for t in tokens.values() if t.pole and t.rung},
     )
 
 
-def _recolour(table: dict[str, object]) -> RecolourPlan:
-    targets = _strings(table.get("targets"), "[recolour] targets")
-    if len(targets) != 2:
-        raise SpecError("[recolour] targets: expected exactly two tokens")
-    rows: list[RecolourRow] = []
-    rows_raw = table.get("rows", [])
-    if not isinstance(rows_raw, list):
-        raise SpecError("[[recolour.rows]]: expected an array of tables")
-    for entry in rows_raw:
-        if not isinstance(entry, dict):
-            raise SpecError("[[recolour.rows]]: expected a table")
-        strategy = entry.get("strategy")
-        if strategy not in ("unmix", "rotate"):
-            raise SpecError(f"[[recolour.rows]] strategy: expected `unmix' or `rotate', got {strategy!r}")
-        files = _strings(entry.get("files"), "[[recolour.rows]] files")
-        if len(files) != 3:
-            raise SpecError("[[recolour.rows]] files: expected two singles, then their mixture")
-        rows.append(RecolourRow(str(entry.get("name", files[2])), strategy, *files))
-    return RecolourPlan((targets[0], targets[1]), tuple(rows))
+def _recolour(data: dict[str, Any]) -> RecolourPlan:
+    rows = tuple(RecolourRow(row["name"], row["strategy"], *row["files"]) for row in data["rows"])
+    return RecolourPlan((data["targets"][0], data["targets"][1]), rows)
 
 
-def load_spec(path: Path) -> PaletteSpec:
+def _consistency(spec: PaletteSpec, data: dict[str, Any]) -> list[str]:
+    """The checks that the schema cannot express."""
+    problems: list[str] = []
+    seen: dict[str, str] = {}
+    inherited = spec.base.names() if spec.base else set()
+    for layer in spec.layers:
+        for token in layer.tokens:
+            if token.name in seen or token.name in inherited:
+                problems.append(f"token `{token.name}' is declared twice")
+            seen[token.name] = layer.name
+    for role in spec.roles:
+        if role.name in seen or role.name in inherited:
+            problems.append(f"role `{role.name}' reuses a declared name")
+        if role.of not in seen and role.of not in inherited and role.of not in BUILTINS:
+            problems.append(f"role `{role.name}' binds `{role.of}', which is not declared before it")
+        seen[role.name] = "roles"
+    names = spec.names()
+    for mode, values in spec.modes.items():
+        problems += [f"mode `{mode}' overrides undeclared `{n}'" for n in values if n not in names]
+    problems += [f"css `--{k}' binds undeclared `{v}'" for k, v in spec.css.items() if v not in names]
+    if spec.tests is not None:
+        named = spec.tests.named_tokens() | {t for pair in spec.tests.exempt for t in pair}
+        problems += [f"tests name undeclared `{n}'" for n in sorted(named - names)]
+    if spec.recolour is not None:
+        problems += [f"recolour targets undeclared `{n}'"
+                     for n in spec.recolour.targets if n not in names]
+    if spec.legacy_hue_names is None:
+        for name in [*spec.tokens(), *(r.name for r in spec.roles)]:
+            if (word := _hue_word(name)) is not None:
+                problems.append(f"`{name}' is named after its hue ({word}): name the use it marks")
+    return problems
+
+
+def load_spec(path: Path, root: Path = DEFAULT_ROOT) -> PaletteSpec:
     """
-    Load a specification file.
+    Load and check a palette file.
 
     Parameters
     ----------
     path : Path
-        A TOML file in the format of the module docstring.
+        A ``palette.yml`` file.
+    root : Path, optional
+        The vault root, against which ``extends`` is resolved.
 
     Returns
     -------
     PaletteSpec
-        The parsed specification.
+        The loaded palette, with the palette it extends.
 
     Raises
     ------
     SpecError
-        If the file is missing or malformed.
+        If the file is missing, breaks the schema, or names something undeclared.
     """
     if not path.exists():
-        raise SpecError(f"no such specification: {path}")
-    with path.open("rb") as handle:
-        data = tomllib.load(handle)
-    tests = data.get("tests")
-    recolour = data.get("recolour")
-    return PaletteSpec(
-        tests=_tests(tests) if isinstance(tests, dict) else None,
-        recolour=_recolour(recolour) if isinstance(recolour, dict) else None,
+        raise SpecError(f"no such palette: {path}")
+    with path.open(encoding="utf-8") as handle:
+        data = yaml.safe_load(handle)
+    errors = sorted(_schema_validator().iter_errors(data), key=lambda e: list(e.absolute_path))
+    if errors:
+        details = "; ".join(f"{'/'.join(map(str, e.absolute_path)) or '(root)'}: {e.message}"
+                            for e in errors)
+        raise SpecError(f"{path}: schema violation: {details}")
+    base = load_spec(root / data["extends"], root) if "extends" in data else None
+    layers = tuple(
+        Layer(name, layer["gloss"], layer.get("note"), tuple(
+            Token(token_name, name, t["value"], t["use"], t.get("note"), t.get("pole"),
+                  t.get("rung"), t.get("contrast"), t.get("below_floor"))
+            for token_name, t in layer["tokens"].items()))
+        for name, layer in data["layers"].items())
+    tokens = {t.name: t for layer in layers for t in layer.tokens}
+    modes = data.get("modes", {})
+    spec = PaletteSpec(
+        path=path,
+        layers=layers,
+        roles=tuple(Role(name, r["of"], r["use"], r.get("tint"), r.get("note"))
+                    for name, r in data.get("roles", {}).items()),
+        modes={name: dict(mode["values"]) for name, mode in modes.items()},
+        mode_glosses={name: mode["gloss"] for name, mode in modes.items()},
+        css=dict(data.get("css", {})),
+        tests=_tests(data["tests"], tokens) if "tests" in data else None,
+        recolour=_recolour(data["recolour"]) if "recolour" in data else None,
+        base=base,
+        legacy_hue_names=data.get("legacy_hue_names"),
     )
+    problems = _consistency(spec, data)
+    if problems:
+        raise SpecError(f"{path}: " + "; ".join(problems))
+    return spec

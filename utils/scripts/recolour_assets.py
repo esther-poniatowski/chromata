@@ -1,13 +1,13 @@
 """
-Repaint two-colour raster pictures into the two target tokens of a LaTeX palette.
+Repaint two-colour raster pictures into the two target tokens of a palette.
 
 Usage, from the workspace root (never from the base conda environment)::
 
     conda run -n geonexus python utils/scripts/recolour_assets.py \\
-        --palette path/to/colors-values.tex --spec path/to/palette.toml \\
+        --spec path/to/palette.yml [--palette path/to/scheme.tex ...] \\
         --source path/to/assets --out path/to/new-assets
 
-The ``[recolour]`` table of the specification names the two target tokens and the rows of pictures.
+The ``recolour`` table of the palette names the two target tokens and the rows of pictures.
 Pictures are written under their own filenames; the source folder is never modified, so a repaint
 can be reviewed before it replaces anything.
 """
@@ -21,7 +21,8 @@ from pathlib import Path
 import numpy as np
 
 from palette_tools.colour import hex_to_srgb
-from palette_tools.latex_palette import PaletteSourceError, read_palette
+from check_palette import measured_palette
+from palette_tools.latex_palette import PaletteSourceError
 from palette_tools.recolour import RecolourError, recolour_row
 from palette_tools.spec import SpecError, load_spec
 
@@ -29,10 +30,10 @@ from palette_tools.spec import SpecError, load_spec
 def build_parser() -> argparse.ArgumentParser:
     """The command-line interface."""
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
-    parser.add_argument("--palette", nargs="+", required=True, type=Path,
-                        help="LaTeX palette sources, in load order")
     parser.add_argument("--spec", required=True, type=Path,
-                        help="TOML specification holding a [recolour] table")
+                        help="the palette file, palette.yml, holding a recolour table")
+    parser.add_argument("--palette", nargs="+", default=[], type=Path,
+                        help="LaTeX sources overriding token values, such as a candidate scheme")
     parser.add_argument("--source", required=True, type=Path, help="folder of the source pictures")
     parser.add_argument("--out", required=True, type=Path, help="folder of the repainted pictures")
     return parser
@@ -45,14 +46,14 @@ def main(argv: list[str] | None = None) -> int:
         print("recolour_assets: --out must differ from --source", file=sys.stderr)
         return 2
     try:
-        palette = read_palette(*args.palette)
+        palette = measured_palette(args.spec, args.palette, None)
         spec = load_spec(args.spec)
     except (PaletteSourceError, SpecError) as error:
         print(f"recolour_assets: {error}", file=sys.stderr)
         return 2
     plan = spec.recolour
     if plan is None:
-        print("recolour_assets: the specification holds no [recolour] table", file=sys.stderr)
+        print("recolour_assets: the palette holds no recolour table", file=sys.stderr)
         return 2
     missing = [t for t in plan.targets if t not in palette]
     if missing:

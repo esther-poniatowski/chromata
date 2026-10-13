@@ -1,17 +1,18 @@
 """
-Measure a LaTeX colour palette against a consumer's acceptance tests.
+Measure a colour palette against its acceptance tests.
 
 Usage, from the workspace root (never from the base conda environment)::
 
     conda run -n geonexus python utils/scripts/check_palette.py \\
-        --palette path/to/colors-values.tex [path/to/scheme.tex ...] --spec path/to/palette.toml
+        --spec path/to/palette.yml [--palette path/to/scheme.tex ...] [--mode dark]
     ... --grey-for chromecore           # the neutral grey matching a token's lightness
     ... --emit-proof proof.tex          # a self-contained proof sheet, then exit
 
-The palette files are read in order, so a later file overrides an earlier one; that order is how a
-candidate scheme is measured on top of base values. The exit status is 1 when a binding test fails,
-so the command can gate a build; a mark that the specification lists under ``accepted`` does not
-fail it.
+The values come from the palette file, then from the LaTeX sources given to ``--palette``, read in
+order, so that a later file overrides an earlier one; that order is how a candidate scheme is
+measured on top of the palette. The roles of the palette are bound last. The exit status is 1 when
+a binding test fails, so the command can gate a build; a mark that the palette accepts under the
+contrast floor does not fail it.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ import sys
 from pathlib import Path
 
 from palette_tools.colour import contrast, grey_matching, oklab
-from palette_tools.latex_palette import PaletteSourceError, read_palette
+from palette_tools.latex_palette import PaletteSourceError, parse_palette
 from palette_tools.proof import proof_sheet
 from palette_tools.report import report
 from palette_tools.spec import SpecError, load_spec
@@ -30,9 +31,10 @@ from palette_tools.spec import SpecError, load_spec
 def build_parser() -> argparse.ArgumentParser:
     """The command-line interface."""
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
-    parser.add_argument("--palette", nargs="+", required=True, type=Path,
-                        help="LaTeX palette sources, in load order")
-    parser.add_argument("--spec", type=Path, help="TOML specification of the acceptance tests")
+    parser.add_argument("--spec", required=True, type=Path, help="the palette file, palette.yml")
+    parser.add_argument("--palette", nargs="+", default=[], type=Path,
+                        help="LaTeX sources overriding token values, such as a candidate scheme, in load order")
+    parser.add_argument("--mode", help="measure the palette in one of its modes, such as dark")
     parser.add_argument("--label", help="name printed in the report (default: the last palette file)")
     parser.add_argument("--grey-for", metavar="TOKEN",
                         help="print the neutral grey matching that token's OKLab lightness, and exit")
@@ -41,17 +43,41 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def measured_palette(spec_path: Path, overrides: list[Path], mode: str | None) -> dict[str, str]:
+    """
+    ``name -> RRGGBB`` of a palette, with the overrides of a candidate scheme, and its roles bound.
+
+    Raises
+    ------
+    SpecError
+        If the palette fails to load, or the mode is not declared.
+    PaletteSourceError
+        If an override source does not exist.
+    """
+    spec = load_spec(spec_path)
+    if mode is not None and mode not in spec.modes and not (spec.base and mode in spec.base.modes):
+        raise SpecError(f"{spec_path}: no mode `{mode}'")
+    values = spec.token_values(mode)
+    for path in overrides:
+        if not path.exists():
+            raise PaletteSourceError(f"no such palette source: {path}")
+        values = parse_palette(path.read_text(encoding="utf-8"), values)
+    return spec.bind_roles(values)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the command; return the exit status."""
     args = build_parser().parse_args(argv)
     try:
-        palette = read_palette(*args.palette)
-        spec = load_spec(args.spec) if args.spec else None
+        palette = measured_palette(args.spec, args.palette, args.mode)
     except (PaletteSourceError, SpecError) as error:
         print(f"check_palette: {error}", file=sys.stderr)
         return 2
-    label = args.label or args.palette[-1].name
-    tests = spec.tests if spec else None
+    spec = load_spec(args.spec)
+    label = args.label or (args.palette[-1].name if args.palette else args.spec.parent.name)
+    if args.mode:
+        label += f" ({args.mode})"
+    tests = spec.tests
 
     if args.grey_for:
         token = args.grey_for
@@ -72,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if tests is None:
-        print("check_palette: --spec with a [tests] table is required for the report", file=sys.stderr)
+        print("check_palette: the palette declares no tests", file=sys.stderr)
         return 2
     text, failures = report(palette, tests, label)
     print(text)
