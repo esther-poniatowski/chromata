@@ -57,11 +57,13 @@ class AcceptanceTests:
     fills: tuple[str, ...] = ()
     #: ``token -> (pole, rung index)``, for the tokens placed on a ladder.
     ladder: dict[str, tuple[str, int]] = field(default_factory=dict)
+    #: ``(mark, ground)`` pairs, each bound by the contrast floor on its own ground.
+    pairs: tuple[tuple[str, str], ...] = ()
 
     def named_tokens(self) -> set[str]:
         """Every token the tests mention, for reporting tokens absent from the palette."""
         named = {t for g in self.groups.values() for t in g} | set(self.marks) | set(self.fills)
-        return named | {self.ground}
+        return named | {self.ground} | {t for pair in self.pairs for t in pair}
 
 
 @dataclass(frozen=True)
@@ -128,6 +130,7 @@ class PaletteSpec:
     roles: tuple[Role, ...] = ()
     modes: dict[str, dict[str, str]] = field(default_factory=dict)
     mode_glosses: dict[str, str] = field(default_factory=dict)
+    mode_tests: dict[str, AcceptanceTests] = field(default_factory=dict)
     css: dict[str, str] = field(default_factory=dict)
     tests: AcceptanceTests | None = None
     recolour: RecolourPlan | None = None
@@ -137,6 +140,18 @@ class PaletteSpec:
     def tokens(self) -> dict[str, Token]:
         """The tokens of this file, by name, in load order."""
         return {t.name: t for layer in self.layers for t in layer.tokens}
+
+    def all_tokens(self) -> dict[str, Token]:
+        """The tokens of this file and of the palettes it extends, by name."""
+        return {**(self.base.all_tokens() if self.base else {}), **self.tokens()}
+
+    def tests_for(self, mode: str | None) -> AcceptanceTests | None:
+        """The tests of the base rendering, or of a mode declared here or in an extended palette."""
+        if mode is None:
+            return self.tests
+        if mode in self.mode_tests:
+            return self.mode_tests[mode]
+        return self.base.tests_for(mode) if self.base else None
 
     def names(self) -> set[str]:
         """Every token and role name that this file and the palettes it extends define."""
@@ -181,14 +196,19 @@ def _hue_word(name: str) -> str | None:
     return next((word for word in HUE_WORDS if word in lowered), None)
 
 
-def _tests(data: dict[str, Any], tokens: dict[str, Token]) -> AcceptanceTests:
+def _tests(data: dict[str, Any], tokens: dict[str, Token],
+           accepted: dict[str, str] | None = None) -> AcceptanceTests:
+    """The tests of one rendering, binding ``tokens`` as marks or fills by their contrast key."""
+    if accepted is None:
+        accepted = {t.name: t.below_floor for t in tokens.values() if t.below_floor}
     return AcceptanceTests(
         ground=data["ground"],
         de_floor=float(data.get("de_floor", 0.15)),
         contrast_floor=float(data.get("contrast_floor", 3.0)),
         groups={str(k): tuple(v) for k, v in data.get("groups", {}).items()},
         exempt={frozenset(e["pair"]): e["channel"] for e in data.get("exempt", [])},
-        accepted={t.name: t.below_floor for t in tokens.values() if t.below_floor},
+        pairs=tuple((p["mark"], p["ground"]) for p in data.get("pairs", [])),
+        accepted=accepted,
         marks=tuple(t.name for t in tokens.values() if t.contrast == "mark"),
         fills=tuple(t.name for t in tokens.values() if t.contrast == "fill"),
         ladder={t.name: (t.pole, RUNGS.index(t.rung))
@@ -221,9 +241,13 @@ def _consistency(spec: PaletteSpec, data: dict[str, Any]) -> list[str]:
     for mode, values in spec.modes.items():
         problems += [f"mode `{mode}' overrides undeclared `{n}'" for n in values if n not in names]
     problems += [f"css `--{k}' binds undeclared `{v}'" for k, v in spec.css.items() if v not in names]
-    if spec.tests is not None:
-        named = spec.tests.named_tokens() | {t for pair in spec.tests.exempt for t in pair}
-        problems += [f"tests name undeclared `{n}'" for n in sorted(named - names)]
+    for label, tests in [("tests", spec.tests),
+                         *((f"tests of mode `{m}'", t) for m, t in spec.mode_tests.items())]:
+        if tests is None:
+            continue
+        named = tests.named_tokens() | {t for pair in tests.exempt for t in pair}
+        named |= set(tests.accepted)
+        problems += [f"{label} name undeclared `{n}'" for n in sorted(named - names)]
     if spec.recolour is not None:
         problems += [f"recolour targets undeclared `{n}'"
                      for n in spec.recolour.targets if n not in names]
@@ -272,6 +296,7 @@ def load_spec(path: Path, root: Path = DEFAULT_ROOT) -> PaletteSpec:
             for token_name, t in layer["tokens"].items()))
         for name, layer in data["layers"].items())
     tokens = {t.name: t for layer in layers for t in layer.tokens}
+    chain = {**(base.all_tokens() if base else {}), **tokens}
     modes = data.get("modes", {})
     spec = PaletteSpec(
         path=path,
@@ -280,6 +305,11 @@ def load_spec(path: Path, root: Path = DEFAULT_ROOT) -> PaletteSpec:
                     for name, r in data.get("roles", {}).items()),
         modes={name: dict(mode["values"]) for name, mode in modes.items()},
         mode_glosses={name: mode["gloss"] for name, mode in modes.items()},
+        mode_tests={
+            name: _tests(mode["tests"],
+                         {n: chain[n] for n in mode["values"] if n in chain},
+                         {a["token"]: a["reason"] for a in mode["tests"].get("accepted", [])})
+            for name, mode in modes.items() if "tests" in mode},
         css=dict(data.get("css", {})),
         tests=_tests(data["tests"], tokens) if "tests" in data else None,
         recolour=_recolour(data["recolour"]) if "recolour" in data else None,

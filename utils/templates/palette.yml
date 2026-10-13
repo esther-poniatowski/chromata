@@ -1,0 +1,60 @@
+# colour palette of one artifact, or of several under artifacts/_common/style/<folder>/; named palette.yml, beside the driver that loads it
+# schema: utils/schemas/palette.schema.yaml
+# after an edit: run utils/scripts/build_palette.py, which writes colors-values.tex and colors-roles.tex beside this file
+# placeholders stay quoted; a value is six uppercase hexadecimal digits, quoted when it holds digits only
+# name every token and role after the use it marks, in letters and digits only, never after its hue
+
+schema_version: 1
+extends: '{{VAULT-ROOT PATH OF THE EXTENDED PALETTE}}'   # optional; e.g. 'artifacts/_common/style/palette.yml'
+# legacy_hue_names: '{{REASON, AND THE TASK THAT RENAMES THE TOKENS}}'  # only for a palette whose names state their hue
+
+layers:                                                  # in load order; a token belongs to exactly one layer
+  '{{LAYER NAME}}':
+    gloss: '{{PURPOSE OF THE TOKENS OF THE LAYER, AS A NOUN PHRASE}}'
+    note: '{{RULES BINDING EVERY TOKEN OF THE LAYER, IN COMPLETE SENTENCES}}'  # optional
+    tokens:
+      '{{TOKEN NAME}}':
+        value: '{{RRGGBB}}'
+        use: '{{CONCEPT OR ELEMENT MARKED, AS A NOUN PHRASE}}'
+        note: '{{CONSTRAINT THAT FIXED THE VALUE, IN COMPLETE SENTENCES}}'  # optional
+        pole: '{{LADDER NAME}}'                          # optional, with rung; the source concept of the ladder
+        rung: '{{RUNG}}'                                 # deep | core | bright | light | pale
+        contrast: '{{CONTRAST CLASS}}'                   # optional; mark | fill
+        below_floor: '{{REASON}}'                        # optional; a mark accepted under the contrast floor
+
+roles:                                                   # optional; loaded after every token, in this order
+  '{{ROLE NAME}}':
+    of: '{{TOKEN OR ROLE NAME}}'                         # or black | white
+    tint: '{{PERCENTAGE}}'                               # optional; an integer from 1 to 99, mixed with white
+    use: '{{ELEMENTS COLOURED THROUGH THE ROLE, AS A NOUN PHRASE}}'
+    note: '{{REASON FOR THE BINDING, IN COMPLETE SENTENCES}}'  # optional
+
+modes:                                                   # optional
+  dark:
+    gloss: '{{RENDERING, AS A NOUN PHRASE}}'
+    values:
+      '{{TOKEN NAME}}': '{{RRGGBB}}'
+    tests:                                               # optional; bind the tokens that the mode overrides
+      ground: '{{TOKEN NAME}}'
+      contrast_floor: '{{NUMBER}}'                       # optional; default 3.0
+      pairs: []                                          # optional; e.g. '{mark: textinverse, ground: chromedeep}'
+      accepted: []                                       # optional; e.g. '{token: inputlight, reason: framed cells}'
+
+css:                                                     # optional; custom properties of the web pages, without the dashes
+  '{{PROPERTY NAME}}': '{{TOKEN OR ROLE NAME}}'
+
+tests:                                                   # optional
+  ground: '{{TOKEN NAME}}'
+  de_floor: '{{NUMBER}}'                                 # optional; default 0.15
+  contrast_floor: '{{NUMBER}}'                           # optional; default 3.0
+  groups:                                                # optional; tokens that can share one figure
+    '{{GROUP TITLE}}': ['{{TOKEN NAME}}', '{{TOKEN NAME}}']
+  exempt: []                                             # optional; e.g. '{pair: [outplane, outplaneannot], channel: line style}'
+  pairs: []                                              # optional; e.g. '{mark: textinverse, ground: chromedeep}'
+
+recolour:                                                # optional; raster pictures painted in two tokens
+  targets: ['{{TOKEN NAME}}', '{{TOKEN NAME}}']
+  rows:
+    - name: '{{ROW NAME}}'
+      strategy: '{{STRATEGY}}'                           # unmix | rotate
+      files: ['{{FIRST PICTURE}}', '{{SECOND PICTURE}}', '{{MIXTURE PICTURE}}']

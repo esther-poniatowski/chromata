@@ -34,7 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--spec", required=True, type=Path, help="the palette file, palette.yml")
     parser.add_argument("--palette", nargs="+", default=[], type=Path,
                         help="LaTeX sources overriding token values, such as a candidate scheme, in load order")
-    parser.add_argument("--mode", help="measure the palette in one of its modes, such as dark")
+    parser.add_argument("--mode", help="measure the palette in one of its modes, such as dark, "
+                                       "against the tests of that mode")
     parser.add_argument("--label", help="name printed in the report (default: the last palette file)")
     parser.add_argument("--grey-for", metavar="TOKEN",
                         help="print the neutral grey matching that token's OKLab lightness, and exit")
@@ -77,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     label = args.label or (args.palette[-1].name if args.palette else args.spec.parent.name)
     if args.mode:
         label += f" ({args.mode})"
-    tests = spec.tests
+    tests = spec.tests_for(args.mode)
 
     if args.grey_for:
         token = args.grey_for
@@ -98,7 +99,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if tests is None:
-        print("check_palette: the palette declares no tests", file=sys.stderr)
+        where = f"mode `{args.mode}'" if args.mode else "palette"
+        print(f"check_palette: the {where} declares no tests", file=sys.stderr)
         return 2
     text, failures = report(palette, tests, label)
     print(text)

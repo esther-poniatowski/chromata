@@ -9,8 +9,10 @@ The acceptance tests applied to a palette.
    grayscale. A pair that separates only for trichromats is reported, and must carry its
    distinction on a non-colour channel.
 4. **Ladder limit.** Two adjacent rungs of one ladder are not distinct, so no group may hold both.
+5. **Pair contrast.** A mark drawn on a ground other than the page, such as text on a badge, needs
+   the contrast floor on that ground.
 
-The trichromatic separation, the contrast floor and the ladder limit are binding; the redundancy
+The trichromatic separation, both contrast tests and the ladder limit are binding; the redundancy
 test reports.
 A mark listed under ``accepted`` is reported under the contrast floor without counting as a
 failure. An acceptance that no longer applies counts as one: a stale acceptance would otherwise
@@ -78,6 +80,18 @@ def report(palette: dict[str, str], tests: AcceptanceTests, label: str) -> tuple
         lines.append(
             f"{token:<16}{value:>8}{lightness:>10.3f}{math.hypot(a, b):>9.3f}{ratio:>8.2f}:1{flag}"
         )
+
+    if tests.pairs:
+        lines.append("\n--- marks on their own ground ---")
+        for mark, ground in tests.pairs:
+            if mark not in palette or ground not in palette:
+                continue
+            ratio = contrast(palette[mark], palette[ground])
+            flag = ""
+            if ratio < tests.contrast_floor:
+                flag = f"  << under {tests.contrast_floor:g}:1"
+                failures += 1
+            lines.append(f"{mark + ' on ' + ground:<34}{ratio:>8.2f}:1{flag}")
 
     # A pair may sit in several groups; each failing pair is counted once, so the total reports
     # the palette rather than the shape of the group table.

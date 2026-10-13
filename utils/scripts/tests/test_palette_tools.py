@@ -38,7 +38,9 @@ roles:
 modes:
   dark:
     gloss: dark rendering
-    values: {bg: "111111"}
+    values: {bg: "111111", dark: "222222"}
+    tests:
+      ground: bg
 css:
   bg: bg
   accent: accent
@@ -106,6 +108,8 @@ def test_load_spec_reads_every_table(tmp_path: Path) -> None:
     values = spec.values()
     assert values["accent"] == "0000FF" and values["tinted"] == colour.srgb_to_hex((0.9, 0.9, 1.0))
     assert spec.values("dark")["bg"] == "111111"
+    dark = spec.tests_for("dark")
+    assert dark is not None and dark.marks == ("dark",) and dark.fills == ()   # overridden tokens only
 
 
 def test_an_extending_palette_names_the_tokens_of_its_base(tmp_path: Path) -> None:
@@ -203,6 +207,13 @@ def test_recolour_row_repaints_a_mixture_into_the_targets(tmp_path: Path) -> Non
     assert np.allclose(mixed, [0.5, 0.5, 0.5], atol=0.01)
 
 
+def test_report_binds_marks_on_their_own_ground() -> None:
+    palette = {"bg": "FFFFFF", "badge": "000000", "ink": "111111", "label": "FFFFFF"}
+    tests = AcceptanceTests(ground="bg", pairs=(("ink", "badge"), ("label", "badge")))
+    text, failures = report(palette, tests, "toy")
+    assert failures == 1 and "ink on badge" in text and "label on badge" in text
+
+
 def test_report_fails_on_adjacent_rungs() -> None:
     palette = {"bg": "FFFFFF", "a": "000000", "b": "FFFF00"}
     tests = AcceptanceTests(ground="bg", groups={"g": ("a", "b")},
@@ -218,7 +229,12 @@ def test_check_palette_exit_codes(tmp_path: Path) -> None:
                     .replace("use: pale mark, contrast: mark", "use: pale mark, contrast: mark, below_floor: framed"),
                     "passing.yml")
     assert check_palette.main(["--spec", str(passing)]) == 0
-    assert check_palette.main(["--spec", str(passing), "--mode", "dark"]) == 1   # pale on a dark ground
+    assert check_palette.main(["--spec", str(passing), "--mode", "dark"]) == 1   # dark on a dark ground
+    accepted = _spec(tmp_path, passing.read_text(encoding="utf-8").replace(
+        "    tests:\n      ground: bg\n",
+        "    tests:\n      ground: bg\n      accepted:\n        - {token: dark, reason: framed}\n"),
+        "accepted.yml")
+    assert check_palette.main(["--spec", str(accepted), "--mode", "dark"]) == 0
     assert check_palette.main(["--spec", str(passing), "--mode", "sepia"]) == 2
     assert check_palette.main(["--spec", str(passing), "--palette", str(tmp_path / "absent.tex")]) == 2
     scheme = tmp_path / "scheme.tex"

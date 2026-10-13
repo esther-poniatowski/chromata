@@ -1,7 +1,8 @@
 # Schema of a colour palette, written as JSON Schema (draft 2020-12) in YAML.
 #
-# This file is the single source of truth for the palette format. A palette file is named
-# palette.yml and sits beside the sources that load it. utils/scripts/build_palette.py
+# This file is the single source of truth for the palette format, instantiated by the skeleton
+# utils/templates/palette.yml. A palette file is named palette.yml and sits beside the sources
+# that load it. utils/scripts/build_palette.py
 # validates it against this schema and generates its LaTeX layers and its CSS blocks;
 # utils/scripts/check_palette.py measures it against its acceptance tests.
 
@@ -152,6 +153,11 @@ $defs:
         minProperties: 1
         propertyNames: {$ref: '#/$defs/name'}
         additionalProperties: {$ref: '#/$defs/hex'}
+      tests:
+        $ref: '#/$defs/mode_tests'
+        description: >-
+          The tests of the rendering. They bind the tokens that the mode overrides, as marks or
+          fills by the contrast key of each token.
   tests:
     type: object
     additionalProperties: false
@@ -190,6 +196,40 @@ $defs:
             channel:
               $ref: '#/$defs/prose'
               description: The non-colour channel that carries the distinction of the pair.
+      pairs: {$ref: '#/$defs/pairs'}
+  pairs:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [mark, ground]
+      properties:
+        mark: {$ref: '#/$defs/name'}
+        ground: {$ref: '#/$defs/name'}
+    description: >-
+      The marks drawn on a ground other than the page ground, such as text on a badge, each
+      bound by the contrast floor on its own ground.
+  mode_tests:
+    type: object
+    additionalProperties: false
+    required: [ground]
+    properties:
+      ground: {$ref: '#/$defs/tests/properties/ground'}
+      de_floor: {$ref: '#/$defs/tests/properties/de_floor'}
+      contrast_floor: {$ref: '#/$defs/tests/properties/contrast_floor'}
+      groups: {$ref: '#/$defs/tests/properties/groups'}
+      exempt: {$ref: '#/$defs/tests/properties/exempt'}
+      pairs: {$ref: '#/$defs/pairs'}
+      accepted:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [token, reason]
+          properties:
+            token: {$ref: '#/$defs/name'}
+            reason: {$ref: '#/$defs/prose'}
+        description: The marks accepted under the contrast floor of the mode, each with its reason.
   recolour:
     type: object
     additionalProperties: false
