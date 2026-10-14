@@ -5,7 +5,7 @@ A consumer writes one ``palette.yml`` under the format of ``utils/schemas/palett
 nothing about any particular document lives in this package. Loading a file validates it against
 the schema, then checks what the schema cannot express: every name resolves, no name is declared
 twice, the palette holds only what its level admits, and no name outside a hue library states a
-hue unless the file declares ``legacy_hue_names``.
+hue.
 
 Three levels separate the colours from their uses. A hue library declares the values, named after
 their hue. A house style binds the elements of the page to hues, and a concept binding binds the
@@ -143,7 +143,6 @@ class PaletteSpec:
     tests: AcceptanceTests | None = None
     recolour: RecolourPlan | None = None
     base: PaletteSpec | None = None
-    legacy_hue_names: str | None = None
     level: str | None = None
 
     def tokens(self) -> dict[str, Token]:
@@ -298,7 +297,7 @@ def _consistency(spec: PaletteSpec, data: dict[str, Any]) -> list[str]:
             problems.append("a hue library declares values alone: no roles, CSS, modes or tests")
     elif spec.level in ("style", "concepts") and spec.layers:
         problems.append(f"a {spec.level} palette binds roles to hues and declares no value")
-    if spec.legacy_hue_names is None and spec.level != "hues":
+    if spec.level != "hues":
         for name in [*spec.tokens(), *(r.name for r in spec.roles)]:
             if (word := _hue_word(name)) is not None:
                 problems.append(f"`{name}' is named after its hue ({word}): name the use it marks")
@@ -354,7 +353,6 @@ def load_spec(path: Path, root: Path = DEFAULT_ROOT) -> PaletteSpec:
         css=dict(data.get("css", {})),
         recolour=_recolour(data["recolour"]) if "recolour" in data else None,
         base=base,
-        legacy_hue_names=data.get("legacy_hue_names"),
         level=data.get("level"),
     )
     own: dict[str, Token | Role] = {**bare.tokens(), **{r.name: r for r in bare.roles}}

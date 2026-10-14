@@ -18,23 +18,36 @@ from palette_tools.recolour import recolour_row, unmix
 from palette_tools.report import report
 from palette_tools.spec import AcceptanceTests, RecolourRow, SpecError, load_spec
 
-SPEC = """
+TOY_HUES = """
 schema_version: 1
-legacy_hue_names: toy palette of the tests
+level: hues
 layers:
   toy:
-    gloss: toy tokens
+    gloss: toy hues
     tokens:
-      bg: {value: FFFFFF, use: ground}
-      dark: {value: "000000", use: dark mark, contrast: mark}
-      pale: {value: EEEEEE, use: pale mark, contrast: mark}
-      red: {value: FF0000, use: first, pole: warm, rung: deep}
-      redish: {value: FE0101, use: second, pole: warm, rung: core}
-      blue: {value: 0000FF, use: third}
-      wash: {value: E6E6FF, use: wash, contrast: fill}
+      paper: {value: FFFFFF, use: white}
+      ink: {value: "000000", use: black}
+      mist: {value: EEEEEE, use: light grey}
+      warmdeep: {value: FF0000, use: warm deep, pole: warm, rung: deep}
+      warmcore: {value: FE0101, use: warm core, pole: warm, rung: core}
+      cool: {value: 0000FF, use: cool}
+      coolwash: {value: E6E6FF, use: cool wash}
+"""
+
+SPEC = """
+schema_version: 1
+level: concepts
+extends: toyhues/palette.yml
 roles:
-  accent: {of: blue, use: accent}
-  tinted: {of: blue, tint: 10, use: tinted accent}
+  bg: {of: paper, use: ground}
+  dark: {of: ink, use: dark mark, contrast: mark}
+  pale: {of: mist, use: pale mark, contrast: mark}
+  first: {of: warmdeep, use: first}
+  second: {of: warmcore, use: second}
+  third: {of: cool, use: third}
+  wash: {of: coolwash, use: wash, contrast: fill}
+  accent: {of: third, use: accent}
+  tinted: {of: third, tint: 10, use: tinted accent}
 modes:
   dark:
     gloss: dark rendering
@@ -47,11 +60,11 @@ css:
 tests:
   ground: bg
   groups:
-    pair: [red, redish, blue]
+    pair: [first, second, third]
   exempt:
-    - {pair: [red, blue], channel: line style}
+    - {pair: [first, third], channel: line style}
 recolour:
-  targets: [red, blue]
+  targets: [first, third]
   rows:
     - {name: row, strategy: unmix, files: [a.png, b.png, ab.png]}
 """
@@ -60,10 +73,10 @@ PALETTE = r"""
 \definecolor{bg}{HTML}{FFFFFF}
 \definecolor{dark}{HTML}{000000}
 \definecolor{pale}{HTML}{EEEEEE}
-\definecolor{red}{HTML}{FF0000}
-\definecolor{redish}{HTML}{FE0101}
-\definecolor{blue}{HTML}{0000FF}
-\colorlet{wash}{blue!10}
+\definecolor{first}{HTML}{FF0000}
+\definecolor{second}{HTML}{FE0101}
+\definecolor{third}{HTML}{0000FF}
+\colorlet{wash}{third!10}
 % \definecolor{retired}{HTML}{123456}
 """
 
@@ -78,8 +91,8 @@ def test_parse_palette_applies_overrides_tints_and_comments() -> None:
     base = parse_palette(PALETTE)
     assert base["wash"] == colour.srgb_to_hex((0.9, 0.9, 1.0))
     assert "retired" not in base
-    over = parse_palette(r"\definecolor{red}{HTML}{00ff00}", base)
-    assert over["red"] == "00FF00" and base["red"] == "FF0000"
+    over = parse_palette(r"\definecolor{first}{HTML}{00ff00}", base)
+    assert over["first"] == "00FF00" and base["first"] == "FF0000"
 
 
 def test_read_palette_reports_a_missing_source(tmp_path: Path) -> None:
@@ -92,7 +105,10 @@ def test_simulate_rejects_an_unknown_mode() -> None:
         colour.simulate("FF0000", "achromat")
 
 
-def _spec(tmp_path: Path, text: str = SPEC, name: str = "palette.yml") -> Path:
+def _spec(tmp_path: Path, text: str = SPEC, name: str = "palette.yml", root: Path | None = None) -> Path:
+    hues = (root or tmp_path) / "toyhues"
+    hues.mkdir(parents=True, exist_ok=True)
+    (hues / "palette.yml").write_text(TOY_HUES, encoding="utf-8")
     path = tmp_path / name
     path.write_text(text, encoding="utf-8")
     return path
@@ -101,9 +117,9 @@ def _spec(tmp_path: Path, text: str = SPEC, name: str = "palette.yml") -> Path:
 def test_load_spec_reads_every_table(tmp_path: Path) -> None:
     spec = load_spec(_spec(tmp_path), tmp_path)
     assert spec.tests is not None and spec.tests.ground == "bg"
-    assert spec.tests.exempt == {frozenset({"red", "blue"}): "line style"}
+    assert spec.tests.exempt == {frozenset({"first", "third"}): "line style"}
     assert spec.tests.marks == ("dark", "pale") and spec.tests.fills == ("wash",)
-    assert spec.tests.ladder == {"red": ("warm", 0), "redish": ("warm", 1)}
+    assert spec.tests.ladder["first"] == ("warm", 0) and spec.tests.ladder["second"] == ("warm", 1)
     assert spec.recolour is not None and spec.recolour.rows[0].mixture == "ab.png"
     values = spec.values()
     assert values["accent"] == "0000FF" and values["tinted"] == colour.srgb_to_hex((0.9, 0.9, 1.0))
@@ -116,24 +132,22 @@ def test_an_extending_palette_names_the_tokens_of_its_base(tmp_path: Path) -> No
     _spec(tmp_path)
     (tmp_path / "child").mkdir()
     child = _spec(tmp_path / "child", (
-        "schema_version: 1\nextends: palette.yml\nlayers:\n  own:\n    gloss: own tokens\n"
-        "    tokens:\n      extra: {value: \"123456\", use: extra}\n"
-        "roles:\n  borrowed: {of: accent, use: a role of the base}\n"))
-    values = load_spec(child, tmp_path).values()
-    assert values["borrowed"] == "0000FF" and values["extra"] == "123456"
+        "schema_version: 1\nlevel: concepts\nextends: palette.yml\n"
+        "roles:\n  borrowed: {of: accent, use: a role of the base}\n"), root=tmp_path)
+    assert load_spec(child, tmp_path).values()["borrowed"] == "0000FF"
 
 
 @pytest.mark.parametrize(
     "edit",
     [
         lambda s: s.replace("  ground: bg\n", ""),                                   # no ground
-        lambda s: s.replace("targets: [red, blue]", "targets: [red]"),               # one target
+        lambda s: s.replace("targets: [first, third]", "targets: [first]"),               # one target
         lambda s: s.replace("strategy: unmix", "strategy: blur"),
         lambda s: s.replace("files: [a.png, b.png, ab.png]", "files: [a.png, b.png]"),
         lambda s: s.replace("contrast: mark}", "below_floor: framed}", 1),           # no contrast
-        lambda s: s.replace("legacy_hue_names: toy palette of the tests\n", ""),     # hue names
-        lambda s: s.replace("{of: blue, use: accent}", "{of: absent, use: accent}"),  # unknown token
-        lambda s: s.replace("bg: {value: FFFFFF", "bg: {value: ffffff"),            # lowercase value
+        lambda s: s.replace("{of: third, use: accent}", "{of: absent, use: accent}"),  # unknown token
+        lambda s: s.replace("level: concepts", "level: palettes"),                # unknown level
+        lambda s: s.replace("level: concepts\n", ""),                               # no level
     ],
 )
 def test_load_spec_rejects_malformed_palettes(tmp_path: Path, edit) -> None:
@@ -145,14 +159,14 @@ def test_report_counts_binding_failures_once_and_honours_exemptions() -> None:
     palette = parse_palette(PALETTE)
     tests = AcceptanceTests(
         ground="bg",
-        groups={"one": ("red", "redish", "blue"), "two": ("red", "redish")},
-        exempt={frozenset({"red", "blue"}): "line style"},
+        groups={"one": ("first", "second", "third"), "two": ("first", "second")},
+        exempt={frozenset({"first", "third"}): "line style"},
         marks=("dark", "pale"),
         fills=("wash",),
     )
     text, failures = report(palette, tests, "toy")
-    # `pale' under the contrast floor, and red / redish under the distance floor, counted once
-    # although the pair sits in two groups; red / blue is exempt.
+    # `pale' under the contrast floor, and first / second under the distance floor, counted once
+    # although the pair sits in two groups; first / third is exempt.
     assert failures == 2
     assert "-- line style" in text and "<< under 3:1" in text
 
@@ -224,38 +238,39 @@ def test_report_fails_on_adjacent_rungs() -> None:
 
 def test_check_palette_exit_codes(tmp_path: Path) -> None:
     spec = _spec(tmp_path)
-    assert check_palette.main(["--spec", str(spec)]) == 1      # red / redish adjacent and too close
-    passing = _spec(tmp_path, SPEC.replace("    pair: [red, redish, blue]\n", "    pair: [dark, blue]\n")
+    root = ["--root", str(tmp_path)]
+    assert check_palette.main(["--spec", str(spec), *root]) == 1      # first / second adjacent and too close
+    passing = _spec(tmp_path, SPEC.replace("    pair: [first, second, third]\n", "    pair: [dark, third]\n")
                     .replace("use: pale mark, contrast: mark", "use: pale mark, contrast: mark, below_floor: framed"),
                     "passing.yml")
-    assert check_palette.main(["--spec", str(passing)]) == 0
-    assert check_palette.main(["--spec", str(passing), "--mode", "dark"]) == 1   # dark on a dark ground
+    assert check_palette.main(["--spec", str(passing), *root]) == 0
+    assert check_palette.main(["--spec", str(passing), "--mode", "dark", *root]) == 1   # dark on a dark ground
     accepted = _spec(tmp_path, passing.read_text(encoding="utf-8").replace(
         "    tests:\n      ground: bg\n",
         "    tests:\n      ground: bg\n      accepted:\n        - {token: dark, reason: framed}\n"),
         "accepted.yml")
-    assert check_palette.main(["--spec", str(accepted), "--mode", "dark"]) == 0
-    assert check_palette.main(["--spec", str(passing), "--mode", "sepia"]) == 2
-    assert check_palette.main(["--spec", str(passing), "--palette", str(tmp_path / "absent.tex")]) == 2
+    assert check_palette.main(["--spec", str(accepted), "--mode", "dark", *root]) == 0
+    assert check_palette.main(["--spec", str(passing), "--mode", "sepia", *root]) == 2
+    assert check_palette.main(["--spec", str(passing), "--palette", str(tmp_path / "absent.tex"), *root]) == 2
     scheme = tmp_path / "scheme.tex"
-    scheme.write_text("\\definecolor{pale}{HTML}{777777}\n", encoding="utf-8")
-    assert check_palette.main(["--spec", str(passing), "--palette", str(scheme)]) == 1  # stale acceptance
+    scheme.write_text("\\definecolor{mist}{HTML}{777777}\n", encoding="utf-8")   # a scheme retunes a hue
+    assert check_palette.main(["--spec", str(passing), "--palette", str(scheme), *root]) == 1  # stale acceptance
     proof = tmp_path / "proof.tex"
-    assert check_palette.main(["--spec", str(spec), "--emit-proof", str(proof)]) == 0
+    assert check_palette.main(["--spec", str(spec), "--emit-proof", str(proof), *root]) == 0
     assert proof.exists()
 
 
 def test_recolour_assets_refuses_to_overwrite_its_sources(tmp_path: Path) -> None:
     spec = _spec(tmp_path)
-    argv = ["--spec", str(spec), "--source", str(tmp_path), "--out", str(tmp_path)]
+    argv = ["--spec", str(spec), "--source", str(tmp_path), "--out", str(tmp_path), "--root", str(tmp_path)]
     assert recolour_assets.main(argv) == 2
 
 
 def test_emitted_layers_and_css_block(tmp_path: Path) -> None:
     spec = load_spec(_spec(tmp_path), tmp_path)
-    values = emit.latex_values(spec, "x/colors-values.tex")
-    assert "\\definecolor{red}{HTML}{FF0000}" in values and "% deep -- first" in values
-    assert parse_palette(values)["wash"] == "E6E6FF"
+    values = emit.latex_values(spec.base, "x/colors-values.tex")
+    assert "\\definecolor{warmdeep}{HTML}{FF0000}" in values and "% deep -- warm deep" in values
+    assert parse_palette(values)["coolwash"] == "E6E6FF"
     roles = emit.latex_roles(spec, "x/colors-roles.tex")
     assert parse_palette(values + roles)["tinted"] == spec.values()["tinted"]
     block = emit.css_block(spec, "palette.yml", "  ")
@@ -269,7 +284,7 @@ def test_build_palette_writes_checks_and_scans(tmp_path: Path) -> None:
     import build_palette
     folder = tmp_path / "artifacts" / "deck"
     folder.mkdir(parents=True)
-    _spec(folder)
+    _spec(folder, root=tmp_path)
     page = folder / "index.html"
     page.write_text("<style>\n  /* palette: artifacts/deck/palette.yml */\n  /* palette: end */\n</style>\n",
                     encoding="utf-8")
@@ -279,7 +294,7 @@ def test_build_palette_writes_checks_and_scans(tmp_path: Path) -> None:
     root = ["--root", str(tmp_path)]
     assert build_palette.main([*root, "--check"]) == 1                 # outputs missing
     assert build_palette.main(root) == 0
-    assert (folder / "colors-values.tex").exists() and (folder / "colors-roles.tex").exists()
+    assert (folder / "colors-roles.tex").exists() and not (folder / "colors-values.tex").exists()
     assert "--accent: #0000FF;" in page.read_text(encoding="utf-8")
     assert build_palette.main([*root, "--check"]) == 0
     (folder / "slides.tex").write_text("\\definecolor{local}{HTML}{000000}\n", encoding="utf-8")

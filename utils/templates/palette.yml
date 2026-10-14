@@ -8,7 +8,6 @@
 schema_version: 1
 level: '{{LEVEL}}'                                      # hues | style | concepts
 extends: '{{VAULT-ROOT PATH OF THE EXTENDED PALETTE}}'   # optional; e.g. 'artifacts/_common/style/palette.yml'
-# legacy_hue_names: '{{REASON, AND THE TASK THAT RENAMES THE TOKENS}}'  # only for a palette whose names state their hue
 
 layers:                                                  # in load order; a token belongs to exactly one layer
   '{{LAYER NAME}}':

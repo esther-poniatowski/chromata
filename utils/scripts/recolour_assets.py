@@ -22,6 +22,7 @@ import numpy as np
 
 from palette_tools.colour import hex_to_srgb
 from check_palette import measured_palette
+from vault_paths import DEFAULT_ROOT
 from palette_tools.latex_palette import PaletteSourceError
 from palette_tools.recolour import RecolourError, recolour_row
 from palette_tools.spec import SpecError, load_spec
@@ -36,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="LaTeX sources overriding token values, such as a candidate scheme")
     parser.add_argument("--source", required=True, type=Path, help="folder of the source pictures")
     parser.add_argument("--out", required=True, type=Path, help="folder of the repainted pictures")
+    parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="vault root, against which extends resolves")
     return parser
 
 
@@ -46,8 +48,8 @@ def main(argv: list[str] | None = None) -> int:
         print("recolour_assets: --out must differ from --source", file=sys.stderr)
         return 2
     try:
-        palette = measured_palette(args.spec, args.palette, None)
-        spec = load_spec(args.spec)
+        palette = measured_palette(args.spec, args.palette, None, args.root)
+        spec = load_spec(args.spec, args.root)
     except (PaletteSourceError, SpecError) as error:
         print(f"recolour_assets: {error}", file=sys.stderr)
         return 2

@@ -38,6 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", help="measure the palette in one of its modes, such as dark, "
                                        "against the tests of that mode")
     parser.add_argument("--label", help="name printed in the report (default: the last palette file)")
+    parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="vault root, against which extends resolves")
     parser.add_argument("--grey-for", metavar="TOKEN",
                         help="print the neutral grey matching that token's OKLab lightness, and exit")
     parser.add_argument("--emit-proof", metavar="PATH", type=Path,
@@ -72,11 +73,11 @@ def main(argv: list[str] | None = None) -> int:
     """Run the command; return the exit status."""
     args = build_parser().parse_args(argv)
     try:
-        palette = measured_palette(args.spec, args.palette, args.mode)
+        palette = measured_palette(args.spec, args.palette, args.mode, args.root)
     except (PaletteSourceError, SpecError) as error:
         print(f"check_palette: {error}", file=sys.stderr)
         return 2
-    spec = load_spec(args.spec)
+    spec = load_spec(args.spec, args.root)
     label = args.label or (args.palette[-1].name if args.palette else args.spec.parent.name)
     if args.mode:
         label += f" ({args.mode})"

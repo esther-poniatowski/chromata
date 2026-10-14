@@ -16,7 +16,7 @@ description: >-
   tests state the separation and contrast that the tokens must reach.
 type: object
 additionalProperties: false
-required: [schema_version]
+required: [schema_version, level]
 properties:
   schema_version:
     const: 1
@@ -33,12 +33,6 @@ properties:
     description: >-
       The path from the vault root to the palette whose tokens and roles this palette may
       name. The documents load the extended palette before this one.
-  legacy_hue_names:
-    type: string
-    minLength: 1
-    description: >-
-      The reason why the tokens of this palette keep a name stating their hue, with the task
-      that renames them. Without this key, a token name containing a hue word is an error.
   layers:
     type: object
     minProperties: 1
