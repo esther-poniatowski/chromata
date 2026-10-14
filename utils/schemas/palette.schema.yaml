@@ -16,10 +16,17 @@ description: >-
   tests state the separation and contrast that the tokens must reach.
 type: object
 additionalProperties: false
-required: [schema_version, layers]
+required: [schema_version]
 properties:
   schema_version:
     const: 1
+  level:
+    enum: [hues, style, concepts]
+    description: >-
+      The level of the palette. A hue library declares colour values named after their hue; a
+      house style binds the elements of the page to hues; a concept binding binds the concepts
+      of one project to hues. Only a hue library declares values, and only its names may state
+      a hue.
   extends:
     type: string
     pattern: '^(?!/)(.*/)?palette\.yml$'
@@ -136,12 +143,22 @@ $defs:
         minimum: 1
         maximum: 99
         description: The percentage of the colour mixed with white.
+      contrast:
+        enum: [mark, fill]
+        description: >-
+          A mark is drawn as a line or a glyph and is bound by the contrast floor; a fill is a
+          wash or a ground, exempt from the floor, and drawn with a stroke.
+      below_floor:
+        $ref: '#/$defs/prose'
+        description: The reason why a mark is accepted under the contrast floor.
       use:
         $ref: '#/$defs/prose'
         description: The elements that call sites colour through the role, as a noun phrase.
       note:
         $ref: '#/$defs/prose'
         description: The reason for the binding, in complete sentences.
+    dependentRequired:
+      below_floor: [contrast]
   mode:
     type: object
     additionalProperties: false
@@ -153,6 +170,7 @@ $defs:
         minProperties: 1
         propertyNames: {$ref: '#/$defs/name'}
         additionalProperties: {$ref: '#/$defs/hex'}
+        description: The value of each token or role that the mode overrides.
       tests:
         $ref: '#/$defs/mode_tests'
         description: >-

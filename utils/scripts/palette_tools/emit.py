@@ -3,7 +3,8 @@ The files generated from a palette: its LaTeX value layer, its LaTeX role layer,
 
 Every generated text states its source and its generator, so that an edit is made in the palette
 and never in the output. The LaTeX layers are written beside the palette file, as
-``colors-values.tex`` and, when the palette binds roles, ``colors-roles.tex``. The CSS block is
+``colors-values.tex`` when the palette declares values, and ``colors-roles.tex`` when it binds
+roles. The CSS block is
 written into each web page between two markers naming the palette.
 """
 
@@ -139,8 +140,9 @@ def outputs(spec: PaletteSpec, root: Path) -> dict[Path, str]:
     """
     folder = spec.path.parent
     out: dict[Path, str] = {}
-    values = folder / VALUES_FILE
-    out[values] = latex_values(spec, values.relative_to(root).as_posix())
+    if spec.layers:
+        values = folder / VALUES_FILE
+        out[values] = latex_values(spec, values.relative_to(root).as_posix())
     if spec.roles:
         roles = folder / ROLES_FILE
         out[roles] = latex_roles(spec, roles.relative_to(root).as_posix())

@@ -26,6 +26,7 @@ from palette_tools.latex_palette import PaletteSourceError, parse_palette
 from palette_tools.proof import proof_sheet
 from palette_tools.report import report
 from palette_tools.spec import SpecError, load_spec
+from vault_paths import DEFAULT_ROOT
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -44,7 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def measured_palette(spec_path: Path, overrides: list[Path], mode: str | None) -> dict[str, str]:
+def measured_palette(spec_path: Path, overrides: list[Path], mode: str | None,
+                     root: Path = DEFAULT_ROOT) -> dict[str, str]:
     """
     ``name -> RRGGBB`` of a palette, with the overrides of a candidate scheme, and its roles bound.
 
@@ -55,15 +57,15 @@ def measured_palette(spec_path: Path, overrides: list[Path], mode: str | None) -
     PaletteSourceError
         If an override source does not exist.
     """
-    spec = load_spec(spec_path)
-    if mode is not None and mode not in spec.modes and not (spec.base and mode in spec.base.modes):
+    spec = load_spec(spec_path, root)
+    if mode is not None and not spec.has_mode(mode):
         raise SpecError(f"{spec_path}: no mode `{mode}'")
     values = spec.token_values(mode)
     for path in overrides:
         if not path.exists():
             raise PaletteSourceError(f"no such palette source: {path}")
         values = parse_palette(path.read_text(encoding="utf-8"), values)
-    return spec.bind_roles(values)
+    return spec.override_roles(spec.bind_roles(values), mode)
 
 
 def main(argv: list[str] | None = None) -> int:

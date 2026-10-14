@@ -284,3 +284,71 @@ def test_build_palette_writes_checks_and_scans(tmp_path: Path) -> None:
     assert build_palette.main([*root, "--check"]) == 0
     (folder / "slides.tex").write_text("\\definecolor{local}{HTML}{000000}\n", encoding="utf-8")
     assert build_palette.main([*root, "--check"]) == 1                 # a colour outside a palette
+
+
+HUES = """
+schema_version: 1
+level: hues
+layers:
+  sama:
+    gloss: toy hues
+    tokens:
+      paper: {value: FFFFFF, use: page}
+      ink: {value: "000000", use: text}
+      azuredeep: {value: 003A62, use: deep azure, pole: azure, rung: deep}
+      azurecore: {value: 025F99, use: azure, pole: azure, rung: core}
+"""
+
+CONCEPTS = """
+schema_version: 1
+level: concepts
+extends: hues/palette.yml
+roles:
+  ground: {of: paper, use: page ground}
+  source: {of: azuredeep, use: the source, contrast: mark}
+  transform: {of: azurecore, use: the transformation, contrast: mark}
+  wash: {of: azurecore, tint: 10, use: pooling, contrast: fill}
+modes:
+  dark:
+    gloss: dark rendering
+    values: {ground: "111111"}
+tests:
+  ground: ground
+  groups:
+    poles: [source, transform]
+"""
+
+
+def _levels(tmp_path: Path) -> Path:
+    (tmp_path / "hues").mkdir()
+    _spec(tmp_path / "hues", HUES)
+    (tmp_path / "concepts").mkdir()
+    return _spec(tmp_path / "concepts", CONCEPTS)
+
+
+def test_levels_bind_concepts_to_hues(tmp_path: Path) -> None:
+    spec = load_spec(_levels(tmp_path), tmp_path)
+    assert spec.values()["transform"] == "025F99"
+    assert spec.values("dark")["ground"] == "111111" and spec.values("dark")["source"] == "003A62"
+    assert spec.tests is not None and spec.tests.marks == ("source", "transform")
+    assert spec.tests.fills == ("wash",)
+    assert spec.tests.ladder["transform"] == ("azure", 1)            # reached through the role
+    text, failures = report(spec.values(), spec.tests, "toy")
+    assert "adjacent rungs of `azure'" in text and failures >= 1
+    measured = check_palette.measured_palette(tmp_path / "concepts" / "palette.yml", [], "dark", tmp_path)
+    assert measured["ground"] == "111111"                            # role override in the checker
+
+
+@pytest.mark.parametrize(
+    ("folder", "text"),
+    [
+        ("concepts", CONCEPTS + "layers:\n  own:\n    gloss: own\n    tokens:\n      x: {value: 123456, use: x}\n"),
+        ("hues", HUES + "roles:\n  page: {of: paper, use: page}\n"),
+        ("concepts", CONCEPTS.replace("  source:", "  sourceblue:").replace("[source,", "[sourceblue,")),
+    ],
+)
+def test_levels_admit_only_their_content(tmp_path: Path, folder: str, text: str) -> None:
+    _levels(tmp_path)
+    path = _spec(tmp_path / folder, text.replace("value: 123456", 'value: "123456"'))
+    with pytest.raises(SpecError):
+        load_spec(path, tmp_path)

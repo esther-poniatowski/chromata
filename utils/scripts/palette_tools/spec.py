@@ -4,16 +4,22 @@ A palette file: its tokens, roles, modes, CSS names, acceptance tests and recolo
 A consumer writes one ``palette.yml`` under the format of ``utils/schemas/palette.schema.yaml``;
 nothing about any particular document lives in this package. Loading a file validates it against
 the schema, then checks what the schema cannot express: every name resolves, no name is declared
-twice, and no token or role states its hue unless the file declares ``legacy_hue_names``.
+twice, the palette holds only what its level admits, and no name outside a hue library states a
+hue unless the file declares ``legacy_hue_names``.
+
+Three levels separate the colours from their uses. A hue library declares the values, named after
+their hue. A house style binds the elements of the page to hues, and a concept binding binds the
+concepts of one project to hues; both hold roles, whose names state a use.
 
 A palette may extend another one, whose tokens and roles it may then name. Its values are the
 values of the extended palette, then its own tokens, then the overrides of a candidate scheme, and
-finally its roles, which copy the values in force when they are bound, as LaTeX does.
+finally its roles, which copy the values in force when they are bound, as LaTeX does. A mode
+overrides a token before the roles are bound, and a role after them.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -119,6 +125,8 @@ class Role:
     use: str
     tint: int | None = None
     note: str | None = None
+    contrast: str | None = None
+    below_floor: str | None = None
 
 
 @dataclass(frozen=True)
@@ -136,6 +144,7 @@ class PaletteSpec:
     recolour: RecolourPlan | None = None
     base: PaletteSpec | None = None
     legacy_hue_names: str | None = None
+    level: str | None = None
 
     def tokens(self) -> dict[str, Token]:
         """The tokens of this file, by name, in load order."""
@@ -144,6 +153,23 @@ class PaletteSpec:
     def all_tokens(self) -> dict[str, Token]:
         """The tokens of this file and of the palettes it extends, by name."""
         return {**(self.base.all_tokens() if self.base else {}), **self.tokens()}
+
+    def all_roles(self) -> dict[str, Role]:
+        """The roles of this file and of the palettes it extends, by name."""
+        return {**(self.base.all_roles() if self.base else {}), **{r.name: r for r in self.roles}}
+
+    def resolve(self, name: str) -> Token | None:
+        """The token that a name reaches through its chain of roles, if any."""
+        tokens, roles = self.all_tokens(), self.all_roles()
+        seen: set[str] = set()
+        while name in roles and name not in seen:
+            seen.add(name)
+            name = roles[name].of
+        return tokens.get(name)
+
+    def has_mode(self, mode: str) -> bool:
+        """Whether this file or a palette it extends declares the mode."""
+        return mode in self.modes or (self.base is not None and self.base.has_mode(mode))
 
     def tests_for(self, mode: str | None) -> AcceptanceTests | None:
         """The tests of the base rendering, or of a mode declared here or in an extended palette."""
@@ -163,7 +189,7 @@ class PaletteSpec:
         values = self.base.values(mode) if self.base else {}
         values.update({name: token.value for name, token in self.tokens().items()})
         if mode is not None:
-            values.update(self.modes.get(mode, {}))
+            values.update({n: v for n, v in self.modes.get(mode, {}).items() if n in self.tokens()})
         return values
 
     def bind_roles(self, values: dict[str, str]) -> dict[str, str]:
@@ -181,9 +207,16 @@ class PaletteSpec:
                 out[role.name] = srgb_to_hex(tuple(c * frac + (1 - frac) for c in (r, g, b)))
         return out
 
+    def override_roles(self, values: dict[str, str], mode: str | None) -> dict[str, str]:
+        """Apply the overrides of the roles that this file declares for a mode, after binding."""
+        out = dict(values)
+        if mode is not None:
+            out.update({n: v for n, v in self.modes.get(mode, {}).items() if n not in self.tokens()})
+        return out
+
     def values(self, mode: str | None = None) -> dict[str, str]:
         """``name -> RRGGBB`` for every token and role, in the given mode."""
-        return self.bind_roles(self.token_values(mode))
+        return self.override_roles(self.bind_roles(self.token_values(mode)), mode)
 
 
 def _schema_validator() -> Draft202012Validator:
@@ -196,11 +229,21 @@ def _hue_word(name: str) -> str | None:
     return next((word for word in HUE_WORDS if word in lowered), None)
 
 
-def _tests(data: dict[str, Any], tokens: dict[str, Token],
+def _tests(data: dict[str, Any], members: dict[str, Token | Role], spec: PaletteSpec,
            accepted: dict[str, str] | None = None) -> AcceptanceTests:
-    """The tests of one rendering, binding ``tokens`` as marks or fills by their contrast key."""
+    """
+    The tests of one rendering.
+
+    ``members`` are the tokens and roles bound as marks or fills by their contrast key. The ladder
+    of a name is the pole and rung of the token that it reaches through its roles.
+    """
     if accepted is None:
-        accepted = {t.name: t.below_floor for t in tokens.values() if t.below_floor}
+        accepted = {m.name: m.below_floor for m in members.values() if m.below_floor}
+    ladder: dict[str, tuple[str, int]] = {}
+    for name in [*spec.all_tokens(), *spec.all_roles()]:
+        token = spec.resolve(name)
+        if token is not None and token.pole and token.rung:
+            ladder[name] = (token.pole, RUNGS.index(token.rung))
     return AcceptanceTests(
         ground=data["ground"],
         de_floor=float(data.get("de_floor", 0.15)),
@@ -209,10 +252,9 @@ def _tests(data: dict[str, Any], tokens: dict[str, Token],
         exempt={frozenset(e["pair"]): e["channel"] for e in data.get("exempt", [])},
         pairs=tuple((p["mark"], p["ground"]) for p in data.get("pairs", [])),
         accepted=accepted,
-        marks=tuple(t.name for t in tokens.values() if t.contrast == "mark"),
-        fills=tuple(t.name for t in tokens.values() if t.contrast == "fill"),
-        ladder={t.name: (t.pole, RUNGS.index(t.rung))
-                for t in tokens.values() if t.pole and t.rung},
+        marks=tuple(m.name for m in members.values() if m.contrast == "mark"),
+        fills=tuple(m.name for m in members.values() if m.contrast == "fill"),
+        ladder=ladder,
     )
 
 
@@ -251,7 +293,12 @@ def _consistency(spec: PaletteSpec, data: dict[str, Any]) -> list[str]:
     if spec.recolour is not None:
         problems += [f"recolour targets undeclared `{n}'"
                      for n in spec.recolour.targets if n not in names]
-    if spec.legacy_hue_names is None:
+    if spec.level == "hues":
+        if spec.roles or spec.css or spec.modes or spec.tests or spec.recolour:
+            problems.append("a hue library declares values alone: no roles, CSS, modes or tests")
+    elif spec.level in ("style", "concepts") and spec.layers:
+        problems.append(f"a {spec.level} palette binds roles to hues and declares no value")
+    if spec.legacy_hue_names is None and spec.level != "hues":
         for name in [*spec.tokens(), *(r.name for r in spec.roles)]:
             if (word := _hue_word(name)) is not None:
                 problems.append(f"`{name}' is named after its hue ({word}): name the use it marks")
@@ -294,27 +341,31 @@ def load_spec(path: Path, root: Path = DEFAULT_ROOT) -> PaletteSpec:
             Token(token_name, name, t["value"], t["use"], t.get("note"), t.get("pole"),
                   t.get("rung"), t.get("contrast"), t.get("below_floor"))
             for token_name, t in layer["tokens"].items()))
-        for name, layer in data["layers"].items())
-    tokens = {t.name: t for layer in layers for t in layer.tokens}
-    chain = {**(base.all_tokens() if base else {}), **tokens}
+        for name, layer in data.get("layers", {}).items())
     modes = data.get("modes", {})
-    spec = PaletteSpec(
+    bare = PaletteSpec(
         path=path,
         layers=layers,
-        roles=tuple(Role(name, r["of"], r["use"], r.get("tint"), r.get("note"))
+        roles=tuple(Role(name, r["of"], r["use"], r.get("tint"), r.get("note"), r.get("contrast"),
+                         r.get("below_floor"))
                     for name, r in data.get("roles", {}).items()),
         modes={name: dict(mode["values"]) for name, mode in modes.items()},
         mode_glosses={name: mode["gloss"] for name, mode in modes.items()},
-        mode_tests={
-            name: _tests(mode["tests"],
-                         {n: chain[n] for n in mode["values"] if n in chain},
-                         {a["token"]: a["reason"] for a in mode["tests"].get("accepted", [])})
-            for name, mode in modes.items() if "tests" in mode},
         css=dict(data.get("css", {})),
-        tests=_tests(data["tests"], tokens) if "tests" in data else None,
         recolour=_recolour(data["recolour"]) if "recolour" in data else None,
         base=base,
         legacy_hue_names=data.get("legacy_hue_names"),
+        level=data.get("level"),
+    )
+    own: dict[str, Token | Role] = {**bare.tokens(), **{r.name: r for r in bare.roles}}
+    chain: dict[str, Token | Role] = {**bare.all_tokens(), **bare.all_roles()}
+    spec = replace(
+        bare,
+        tests=_tests(data["tests"], own, bare) if "tests" in data else None,
+        mode_tests={
+            name: _tests(mode["tests"], {n: chain[n] for n in mode["values"] if n in chain}, bare,
+                         {a["token"]: a["reason"] for a in mode["tests"].get("accepted", [])})
+            for name, mode in modes.items() if "tests" in mode},
     )
     problems = _consistency(spec, data)
     if problems:
