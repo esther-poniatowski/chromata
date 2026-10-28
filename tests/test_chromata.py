@@ -10,11 +10,19 @@ import pytest
 from PIL import Image
 
 from chromata import build_cli, check_cli, colour, emit, latex_palette, recolour_cli
+from chromata.cli_resources import resource_resolver
 from chromata.latex_palette import PaletteSourceError, parse_palette, read_palette
 from chromata.proof import proof_sheet
 from chromata.recolour import recolour_row, unmix
 from chromata.report import report
-from chromata.spec import AcceptanceTests, LocalResolver, RecolourRow, SpecError, load_spec
+from chromata.spec import (
+    AcceptanceTests,
+    LocalResolver,
+    MappedResolver,
+    RecolourRow,
+    SpecError,
+    load_spec,
+)
 
 TOY_HUES = """
 schema_version: 1
@@ -350,6 +358,43 @@ def test_build_command_writes_and_checks_explicit_targets(tmp_path: Path) -> Non
     assert build_cli.main([*args, "--check"]) == 0
 
 
+@pytest.mark.parametrize(
+    ("parser", "required"),
+    [
+        (build_cli.build_parser, ["--root", "/tmp/root", "--spec", "palette.yml"]),
+        (check_cli.build_parser, ["--root", "/tmp/root", "--spec", "palette.yml"]),
+        (
+            recolour_cli.build_parser,
+            [
+                "--root",
+                "/tmp/root",
+                "--spec",
+                "palette.yml",
+                "--source",
+                "source",
+                "--out",
+                "out",
+            ],
+        ),
+    ],
+)
+def test_commands_accept_the_shared_resource_binding(parser, required: list[str]) -> None:
+    args = parser().parse_args(
+        [*required, "--resource", "diakosmos:house.palette.yml=/tmp/house.palette.yml"]
+    )
+
+    assert args.resource == [
+        ("diakosmos:house.palette.yml", Path("/tmp/house.palette.yml"))
+    ]
+
+
+def test_resource_resolver_rejects_a_duplicate_binding(tmp_path: Path) -> None:
+    binding = ("diakosmos:house.palette.yml", tmp_path / "house.palette.yml")
+
+    with pytest.raises(SpecError, match="bound twice"):
+        resource_resolver(tmp_path, [binding, binding])
+
+
 @pytest.mark.parametrize("option", [
     ["--tex-name", "missing-separator"],
     ["--source-label", "bad*/comment"],
@@ -408,6 +453,49 @@ def test_projection_api_rejects_a_different_token_role_partition(tmp_path: Path)
 def test_local_resolver_rejects_root_escape(tmp_path: Path) -> None:
     with pytest.raises(SpecError, match="escapes"):
         LocalResolver(tmp_path).resolve("../outside/palette.yml", source=tmp_path / "palette.yml")
+
+
+def test_mapped_resolver_loads_a_package_palette_and_its_sibling(tmp_path: Path) -> None:
+    package = tmp_path / "snapshot" / "resources"
+    package.mkdir(parents=True)
+    hues = package / "hues.palette.yml"
+    hues.write_text(TOY_HUES, encoding="utf-8")
+    house = package / "house.palette.yml"
+    house.write_text(
+        "schema_version: 1\nlevel: style\nextends: hues.palette.yml\n"
+        "roles:\n  identity: {of: cool, use: identity}\n",
+        encoding="utf-8",
+    )
+    project = tmp_path / "project"
+    project.mkdir()
+    concepts = project / "concepts.palette.yml"
+    concepts.write_text(
+        "schema_version: 1\nlevel: concepts\nextends: diakosmos:house.palette.yml\n"
+        "roles:\n  result: {of: identity, use: result}\n",
+        encoding="utf-8",
+    )
+    resolver = MappedResolver(
+        LocalResolver(project), {"diakosmos:house.palette.yml": house}
+    )
+
+    spec = load_spec(concepts, project, resolver=resolver)
+
+    assert spec.values()["result"] == "0000FF"
+
+
+def test_mapped_resolver_rejects_an_escape_from_a_package_resource(tmp_path: Path) -> None:
+    package = tmp_path / "snapshot" / "resources"
+    package.mkdir(parents=True)
+    mapped = package / "house.palette.yml"
+    resolver = MappedResolver(LocalResolver(tmp_path), {"package:house.palette.yml": mapped})
+
+    with pytest.raises(SpecError, match="mapped resource"):
+        resolver.resolve("../outside.palette.yml", source=mapped)
+
+
+def test_mapped_resolver_rejects_a_relative_resource_path(tmp_path: Path) -> None:
+    with pytest.raises(SpecError, match="must be absolute"):
+        MappedResolver(LocalResolver(tmp_path), {"package:house.palette.yml": Path("house.yml")})
 
 
 def test_load_spec_rejects_extension_cycles(tmp_path: Path) -> None:

@@ -21,11 +21,12 @@ import argparse
 import sys
 from pathlib import Path
 
+from chromata.cli_resources import add_resource_argument, resource_resolver
 from chromata.colour import contrast, grey_matching, oklab
 from chromata.latex_palette import PaletteSourceError, parse_palette
 from chromata.proof import proof_sheet
 from chromata.report import report
-from chromata.spec import SpecError, load_spec
+from chromata.spec import ResourceResolver, SpecError, load_spec
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--label", help="name printed in the report (default: the last palette file)")
     parser.add_argument("--root", required=True, type=Path,
                         help="local resource root against which path references resolve")
+    add_resource_argument(parser)
     parser.add_argument("--grey-for", metavar="TOKEN",
                         help="print the neutral grey matching that token's OKLab lightness, and exit")
     parser.add_argument("--emit-proof", metavar="PATH", type=Path,
@@ -46,8 +48,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def measured_palette(spec_path: Path, overrides: list[Path], mode: str | None,
-                     root: Path) -> dict[str, str]:
+def measured_palette(
+    spec_path: Path,
+    overrides: list[Path],
+    mode: str | None,
+    root: Path,
+    resolver: ResourceResolver | None = None,
+) -> dict[str, str]:
     """
     ``name -> RRGGBB`` of a palette, with the overrides of a candidate scheme, and its roles bound.
 
@@ -58,7 +65,7 @@ def measured_palette(spec_path: Path, overrides: list[Path], mode: str | None,
     PaletteSourceError
         If an override source does not exist.
     """
-    spec = load_spec(spec_path, root)
+    spec = load_spec(spec_path, root, resolver=resolver)
     if mode is not None and not spec.has_mode(mode):
         raise SpecError(f"{spec_path}: no mode `{mode}'")
     values = spec.token_values(mode)
@@ -73,11 +80,12 @@ def main(argv: list[str] | None = None) -> int:
     """Run the command; return the exit status."""
     args = build_parser().parse_args(argv)
     try:
-        palette = measured_palette(args.spec, args.palette, args.mode, args.root)
+        resolver = resource_resolver(args.root, args.resource)
+        palette = measured_palette(args.spec, args.palette, args.mode, args.root, resolver)
+        spec = load_spec(args.spec, args.root, resolver=resolver)
     except (PaletteSourceError, SpecError) as error:
         print(f"chromata-check: {error}", file=sys.stderr)
         return 2
-    spec = load_spec(args.spec, args.root)
     label = args.label or (args.palette[-1].name if args.palette else args.spec.parent.name)
     if args.mode:
         label += f" ({args.mode})"

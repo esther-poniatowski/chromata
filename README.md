@@ -54,6 +54,11 @@ separate value and role namespaces. Explicit `--values-out`, `--roles-out`, and 
 arguments control the projection targets. Repeated `--tex-name SOURCE=TARGET` arguments preserve a
 consumer interface whose public name differs from the palette name.
 
+Pass each resolved external file as `--resource <logical-reference>=<resolved-path>`. Then,
+`--resource` binds the logical `extends` value to the supplied path. Without a binding, Chromata
+resolves the value relative to `--root`. From a bound palette, Chromata resolves a sibling path
+within the bound file's directory.
+
 Generated files name their source relative to `--root`. When the logical resource root differs
 from the desired provenance label, `--source-label` supplies that stable label explicitly.
 

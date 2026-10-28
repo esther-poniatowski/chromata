@@ -29,8 +29,8 @@ properties:
     type: string
     pattern: '^(?!/).*palette\.yml$'
     description: >-
-      The path from the declared resource root to the palette whose tokens and roles this palette may
-      name. The documents load the extended palette before this one.
+      Names the palette loaded before this one, using either a root-relative path or a logical
+      resource name. This palette may use the loaded palette's tokens and roles.
   layers:
     type: object
     minProperties: 1

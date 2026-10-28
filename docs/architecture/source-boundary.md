@@ -33,8 +33,11 @@ and calls the package API.
 ## Dependency boundary
 
 A dependency manager owns resource acquisition, commit selection, snapshots, and cache locations.
-Chromata receives a resolved file through `ResourceResolver`. The default `LocalResolver` confines
-path references to one declared root. An adapter may map logical references to snapshot files, but
+The dependency boundary supplies each resolved file to Chromata through `ResourceResolver`.
+
+Two resolvers confine Chromata to explicitly selected files. `LocalResolver` resolves relative paths
+within its configured root. By contrast, `MappedResolver` binds each exact logical name to a resolved
+file. For a nested `extends` value, `MappedResolver` confines lookup to the mapped resource directory.
 Chromata must not import a dependency manager or inspect its storage.
 
 ## Version-one restrictions

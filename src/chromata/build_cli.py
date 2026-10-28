@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from chromata.cli_resources import add_resource_argument, resource_resolver
 from chromata.emit import (
     ROLES_FILE,
     VALUES_FILE,
@@ -43,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="local resource root against which path references resolve",
     )
+    add_resource_argument(parser)
     parser.add_argument("--values-out", type=Path, help="target of the LaTeX value layer")
     parser.add_argument("--roles-out", type=Path, help="target of the LaTeX role layer")
     parser.add_argument("--css-out", type=Path, help="target of the standalone CSS block")
@@ -130,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     root = args.root.resolve()
     try:
-        spec = load_spec(args.spec, root)
+        spec = load_spec(args.spec, root, resolver=resource_resolver(root, args.resource))
     except SpecError as error:
         print(f"chromata-build: {error}", file=sys.stderr)
         return 2

@@ -18,9 +18,11 @@ overrides a token before the roles are bound, and a role after them.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from importlib.resources import files
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Literal, Protocol
 
 import yaml
@@ -52,6 +54,41 @@ class LocalResolver:
         if target != root and root not in target.parents:
             raise SpecError(f"palette reference escapes the resource root: {reference}")
         return target
+
+
+@dataclass(frozen=True)
+class MappedResolver:
+    """Resolve exact logical references, then confined local references."""
+
+    local: ResourceResolver
+    resources: Mapping[str, Path]
+
+    def __post_init__(self) -> None:
+        relative_paths = [path for path in self.resources.values() if not path.is_absolute()]
+        if relative_paths:
+            raise SpecError(f"a mapped resource path must be absolute: {relative_paths[0]}")
+        normalized = {reference: path.resolve() for reference, path in self.resources.items()}
+        if any(not reference for reference in normalized):
+            raise SpecError("a logical resource reference cannot be empty")
+        object.__setattr__(self, "resources", MappingProxyType(normalized))
+
+    def resolve(self, reference: str, *, source: Path) -> Path:
+        """Resolve a mapping, a sibling of a mapped file, or the local fallback."""
+        if reference in self.resources:
+            return self.resources[reference]
+        source = source.resolve()
+        mapped_roots = sorted(
+            {path.parent for path in self.resources.values()},
+            key=lambda path: len(path.parts),
+            reverse=True,
+        )
+        for root in mapped_roots:
+            if source == root or root in source.parents:
+                target = (source.parent / reference).resolve()
+                if target != root and root not in target.parents:
+                    raise SpecError(f"palette reference escapes its mapped resource: {reference}")
+                return target
+        return self.local.resolve(reference, source=source)
 
 
 #: Order of the rungs of a ladder, from the darkest to the lightest.
@@ -345,6 +382,8 @@ def load_spec(
     root : Path, optional
         The local resource root against which ``extends`` is resolved. When omitted, references
         resolve from the folder of ``path``.
+    resolver : ResourceResolver, optional
+        The resolver for local paths or logical resource references.
 
     Returns
     -------

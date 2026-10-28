@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 from chromata.check_cli import measured_palette
+from chromata.cli_resources import add_resource_argument, resource_resolver
 from chromata.colour import hex_to_srgb
 from chromata.latex_palette import PaletteSourceError
 from chromata.spec import SpecError, load_spec
@@ -35,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", required=True, type=Path, help="folder of the repainted pictures")
     parser.add_argument("--root", required=True, type=Path,
                         help="local resource root against which path references resolve")
+    add_resource_argument(parser)
     return parser
 
 
@@ -55,8 +57,9 @@ def main(argv: list[str] | None = None) -> int:
         print("chromata-recolour: --out must differ from --source", file=sys.stderr)
         return 2
     try:
-        palette = measured_palette(args.spec, args.palette, None, args.root)
-        spec = load_spec(args.spec, args.root)
+        resolver = resource_resolver(args.root, args.resource)
+        palette = measured_palette(args.spec, args.palette, None, args.root, resolver)
+        spec = load_spec(args.spec, args.root, resolver=resolver)
     except (PaletteSourceError, SpecError) as error:
         print(f"chromata-recolour: {error}", file=sys.stderr)
         return 2
