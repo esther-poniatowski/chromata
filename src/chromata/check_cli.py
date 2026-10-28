@@ -1,9 +1,9 @@
 """
 Measure a colour palette against its acceptance tests.
 
-Usage, from the workspace root (never from the base conda environment)::
+Usage::
 
-    conda run -n geonexus python utils/scripts/check_palette.py \\
+    chromata-check --root . \\
         --spec path/to/palette.yml [--palette path/to/scheme.tex ...] [--mode dark]
     ... --grey-for chromecore           # the neutral grey matching a token's lightness
     ... --emit-proof proof.tex          # a self-contained proof sheet, then exit
@@ -21,12 +21,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from palette_tools.colour import contrast, grey_matching, oklab
-from palette_tools.latex_palette import PaletteSourceError, parse_palette
-from palette_tools.proof import proof_sheet
-from palette_tools.report import report
-from palette_tools.spec import SpecError, load_spec
-from vault_paths import DEFAULT_ROOT
+from chromata.colour import contrast, grey_matching, oklab
+from chromata.latex_palette import PaletteSourceError, parse_palette
+from chromata.proof import proof_sheet
+from chromata.report import report
+from chromata.spec import SpecError, load_spec
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,7 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", help="measure the palette in one of its modes, such as dark, "
                                        "against the tests of that mode")
     parser.add_argument("--label", help="name printed in the report (default: the last palette file)")
-    parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="vault root, against which extends resolves")
+    parser.add_argument("--root", required=True, type=Path,
+                        help="local resource root against which path references resolve")
     parser.add_argument("--grey-for", metavar="TOKEN",
                         help="print the neutral grey matching that token's OKLab lightness, and exit")
     parser.add_argument("--emit-proof", metavar="PATH", type=Path,
@@ -47,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def measured_palette(spec_path: Path, overrides: list[Path], mode: str | None,
-                     root: Path = DEFAULT_ROOT) -> dict[str, str]:
+                     root: Path) -> dict[str, str]:
     """
     ``name -> RRGGBB`` of a palette, with the overrides of a candidate scheme, and its roles bound.
 
@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         palette = measured_palette(args.spec, args.palette, args.mode, args.root)
     except (PaletteSourceError, SpecError) as error:
-        print(f"check_palette: {error}", file=sys.stderr)
+        print(f"chromata-check: {error}", file=sys.stderr)
         return 2
     spec = load_spec(args.spec, args.root)
     label = args.label or (args.palette[-1].name if args.palette else args.spec.parent.name)
@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.grey_for:
         token = args.grey_for
         if token not in palette:
-            print(f"check_palette: unknown token: {token}", file=sys.stderr)
+            print(f"chromata-check: unknown token: {token}", file=sys.stderr)
             return 2
         grey = grey_matching(palette[token])
         ground = palette.get(tests.ground, "FFFFFF") if tests else "FFFFFF"
@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if tests is None:
         where = f"mode `{args.mode}'" if args.mode else "palette"
-        print(f"check_palette: the {where} declares no tests", file=sys.stderr)
+        print(f"chromata-check: the {where} declares no tests", file=sys.stderr)
         return 2
     text, failures = report(palette, tests, label)
     print(text)

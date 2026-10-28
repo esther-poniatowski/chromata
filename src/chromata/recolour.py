@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from palette_tools.spec import RecolourRow
+from chromata.spec import RecolourRow
 
 #: A pixel takes part in a measurement only if it is opaque enough, coloured enough and bright
 #: enough to state a hue. Anti-aliased rims and near-transparent smoke state nothing.
@@ -181,9 +181,9 @@ def recolour_row(row: RecolourRow, source_dir: Path, out_dir: Path,
     """
     singles = (source_dir / row.first, source_dir / row.second)
     sources = (source_colour(singles[0]), source_colour(singles[1]))
-    lines = [f"{row.name} ({row.strategy}): measured sources "
-             f"{tuple(round(float(c), 3) for c in sources[0])} and "
-             f"{tuple(round(float(c), 3) for c in sources[1])}"]
+    lines = [(f"{row.name} ({row.strategy}): measured sources "
+              f"{tuple(round(float(c), 3) for c in sources[0])} and "
+              f"{tuple(round(float(c), 3) for c in sources[1])}")]
     anchors: tuple[float, float] | None = None
     if row.strategy == "rotate":
         measured = []

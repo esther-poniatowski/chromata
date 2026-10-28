@@ -1,0 +1,15 @@
+# valid house-style example; resolve extends from the examples folder
+schema_version: 1
+level: style
+extends: hues.palette.yml
+
+roles:
+  pageground: {of: paper, use: page ground}
+  textprimary: {of: ink, use: primary text, contrast: mark}
+  identity: {of: azurebright, use: identity marks, contrast: mark}
+  identitywash: {of: azurebright, tint: 12, use: identity wash, contrast: fill}
+
+tests:
+  ground: pageground
+  groups:
+    marks: [textprimary, identity]

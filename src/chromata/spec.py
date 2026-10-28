@@ -1,11 +1,10 @@
 """
 A palette file: its tokens, roles, modes, CSS names, acceptance tests and recolouring rows.
 
-A consumer writes one ``palette.yml`` under the format of ``utils/schemas/palette.schema.yaml``;
-nothing about any particular document lives in this package. Loading a file validates it against
-the schema, then checks what the schema cannot express: every name resolves, no name is declared
-twice, the palette holds only what its level admits, and no name outside a hue library states a
-hue.
+A consumer writes a palette under the schema installed with Chromata. Nothing about any particular
+document lives in this package. Loading a file validates it against the schema, then checks what
+the schema cannot express: every name resolves, no name is declared twice, the palette holds only
+what its level admits, and no name outside a hue library states a hue.
 
 Three levels separate the colours from their uses. A hue library declares the values, named after
 their hue. A house style binds the elements of the page to hues, and a concept binding binds the
@@ -20,16 +19,40 @@ overrides a token before the roles are bound, and a role after them.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from importlib.resources import files
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 import yaml
 from jsonschema import Draft202012Validator
 
-from palette_tools.colour import hex_to_srgb, srgb_to_hex
-from vault_paths import DEFAULT_ROOT, PALETTE_SCHEMA
+from chromata.colour import hex_to_srgb, srgb_to_hex
 
 Strategy = Literal["unmix", "rotate"]
+
+
+class ResourceResolver(Protocol):
+    """Resolve one palette reference without exposing a dependency manager's storage layout."""
+
+    def resolve(self, reference: str, *, source: Path) -> Path:
+        """Return the local file that supplies ``reference`` for ``source``."""
+
+
+@dataclass(frozen=True)
+class LocalResolver:
+    """Resolve palette references below one explicit local root."""
+
+    root: Path
+
+    def resolve(self, reference: str, *, source: Path) -> Path:
+        """Resolve a root-relative reference and reject escapes from the declared root."""
+        del source
+        root = self.root.resolve()
+        target = (root / reference).resolve()
+        if target != root and root not in target.parents:
+            raise SpecError(f"palette reference escapes the resource root: {reference}")
+        return target
+
 
 #: Order of the rungs of a ladder, from the darkest to the lightest.
 RUNGS: tuple[str, ...] = ("deep", "core", "bright", "light", "pale")
@@ -219,7 +242,8 @@ class PaletteSpec:
 
 
 def _schema_validator() -> Draft202012Validator:
-    with (DEFAULT_ROOT / PALETTE_SCHEMA).open(encoding="utf-8") as handle:
+    schema = files("chromata.schemas").joinpath("palette.schema.yaml")
+    with schema.open(encoding="utf-8") as handle:
         return Draft202012Validator(yaml.safe_load(handle))
 
 
@@ -304,7 +328,13 @@ def _consistency(spec: PaletteSpec, data: dict[str, Any]) -> list[str]:
     return problems
 
 
-def load_spec(path: Path, root: Path = DEFAULT_ROOT) -> PaletteSpec:
+def load_spec(
+    path: Path,
+    root: Path | None = None,
+    *,
+    resolver: ResourceResolver | None = None,
+    _chain: tuple[Path, ...] = (),
+) -> PaletteSpec:
     """
     Load and check a palette file.
 
@@ -313,7 +343,8 @@ def load_spec(path: Path, root: Path = DEFAULT_ROOT) -> PaletteSpec:
     path : Path
         A ``palette.yml`` file.
     root : Path, optional
-        The vault root, against which ``extends`` is resolved.
+        The local resource root against which ``extends`` is resolved. When omitted, references
+        resolve from the folder of ``path``.
 
     Returns
     -------
@@ -325,6 +356,10 @@ def load_spec(path: Path, root: Path = DEFAULT_ROOT) -> PaletteSpec:
     SpecError
         If the file is missing, breaks the schema, or names something undeclared.
     """
+    path = path.resolve()
+    if path in _chain:
+        cycle = " -> ".join(p.as_posix() for p in (*_chain, path))
+        raise SpecError(f"palette extension cycle: {cycle}")
     if not path.exists():
         raise SpecError(f"no such palette: {path}")
     with path.open(encoding="utf-8") as handle:
@@ -334,7 +369,17 @@ def load_spec(path: Path, root: Path = DEFAULT_ROOT) -> PaletteSpec:
         details = "; ".join(f"{'/'.join(map(str, e.absolute_path)) or '(root)'}: {e.message}"
                             for e in errors)
         raise SpecError(f"{path}: schema violation: {details}")
-    base = load_spec(root / data["extends"], root) if "extends" in data else None
+    active_resolver = resolver or LocalResolver(root or path.parent)
+    base = (
+        load_spec(
+            active_resolver.resolve(data["extends"], source=path),
+            root,
+            resolver=active_resolver,
+            _chain=(*_chain, path),
+        )
+        if "extends" in data
+        else None
+    )
     layers = tuple(
         Layer(name, layer["gloss"], layer.get("note"), tuple(
             Token(token_name, name, t["value"], t["use"], t.get("note"), t.get("pole"),

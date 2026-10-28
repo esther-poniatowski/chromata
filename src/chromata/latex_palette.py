@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from palette_tools.colour import hex_to_srgb, srgb_to_hex
+from chromata.colour import hex_to_srgb, srgb_to_hex
 
 DEFINE_RE = re.compile(r"^\s*\\definecolor\{(\w+)\}\{HTML\}\{([0-9A-Fa-f]{6})\}")
 LET_RE = re.compile(r"^\s*\\colorlet\{(\w+)\}\{(\w+)(?:!(\d+))?\}")

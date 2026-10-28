@@ -1,4 +1,4 @@
-"""Tests of the palette tools: colour science, palette reading, specification, report, proof, recolouring."""
+"""Tests of Chromata's colour science, specifications, projections and raster transforms."""
 
 from __future__ import annotations
 
@@ -9,14 +9,12 @@ import numpy as np
 import pytest
 from PIL import Image
 
-import check_palette
-import recolour_assets
-from palette_tools import colour, emit, latex_palette
-from palette_tools.latex_palette import PaletteSourceError, parse_palette, read_palette
-from palette_tools.proof import proof_sheet
-from palette_tools.recolour import recolour_row, unmix
-from palette_tools.report import report
-from palette_tools.spec import AcceptanceTests, RecolourRow, SpecError, load_spec
+from chromata import build_cli, check_cli, colour, emit, latex_palette, recolour_cli
+from chromata.latex_palette import PaletteSourceError, parse_palette, read_palette
+from chromata.proof import proof_sheet
+from chromata.recolour import recolour_row, unmix
+from chromata.report import report
+from chromata.spec import AcceptanceTests, LocalResolver, RecolourRow, SpecError, load_spec
 
 TOY_HUES = """
 schema_version: 1
@@ -87,6 +85,18 @@ def test_doctests(module: object) -> None:
     assert doctest.testmod(module).failed == 0  # type: ignore[arg-type]
 
 
+def test_package_source_has_no_vault_runtime_import() -> None:
+    source_root = Path(__file__).parents[1] / "src" / "chromata"
+    forbidden = ("from vault_paths", "import vault_paths", "from palette_tools", "import palette_tools")
+    findings = [
+        f"{path}:{token}"
+        for path in source_root.rglob("*.py")
+        for token in forbidden
+        if token in path.read_text(encoding="utf-8")
+    ]
+    assert findings == []
+
+
 def test_parse_palette_applies_overrides_tints_and_comments() -> None:
     base = parse_palette(PALETTE)
     assert base["wash"] == colour.srgb_to_hex((0.9, 0.9, 1.0))
@@ -135,6 +145,30 @@ def test_an_extending_palette_names_the_tokens_of_its_base(tmp_path: Path) -> No
         "schema_version: 1\nlevel: concepts\nextends: palette.yml\n"
         "roles:\n  borrowed: {of: accent, use: a role of the base}\n"), root=tmp_path)
     assert load_spec(child, tmp_path).values()["borrowed"] == "0000FF"
+
+
+@pytest.mark.parametrize("name", ["hues.palette.yml", "style.palette.yml", "concepts.palette.yml"])
+def test_shipped_examples_are_valid(name: str) -> None:
+    examples = Path(__file__).parents[1] / "examples"
+    assert load_spec(examples / name, examples).level in {"hues", "style", "concepts"}
+
+
+@pytest.mark.parametrize("name", ["style.palette.yml", "concepts.palette.yml"])
+def test_shipped_examples_pass_their_acceptance_checks(name: str) -> None:
+    examples = Path(__file__).parents[1] / "examples"
+    assert check_cli.main(["--root", str(examples), "--spec", str(examples / name)]) == 0
+
+
+def test_an_extending_palette_accepts_a_descriptive_palette_filename(tmp_path: Path) -> None:
+    base = tmp_path / "house-hues.palette.yml"
+    base.write_text(TOY_HUES, encoding="utf-8")
+    child = tmp_path / "house-style.palette.yml"
+    child.write_text(
+        "schema_version: 1\nlevel: concepts\nextends: house-hues.palette.yml\n"
+        "roles:\n  borrowed: {of: cool, use: a role of the base}\n",
+        encoding="utf-8",
+    )
+    assert load_spec(child).values()["borrowed"] == "0000FF"
 
 
 @pytest.mark.parametrize(
@@ -239,36 +273,37 @@ def test_report_fails_on_adjacent_rungs() -> None:
 def test_check_palette_exit_codes(tmp_path: Path) -> None:
     spec = _spec(tmp_path)
     root = ["--root", str(tmp_path)]
-    assert check_palette.main(["--spec", str(spec), *root]) == 1      # first / second adjacent and too close
+    assert check_cli.main(["--spec", str(spec), *root]) == 1      # first / second adjacent and too close
     passing = _spec(tmp_path, SPEC.replace("    pair: [first, second, third]\n", "    pair: [dark, third]\n")
                     .replace("use: pale mark, contrast: mark", "use: pale mark, contrast: mark, below_floor: framed"),
                     "passing.yml")
-    assert check_palette.main(["--spec", str(passing), *root]) == 0
-    assert check_palette.main(["--spec", str(passing), "--mode", "dark", *root]) == 1   # dark on a dark ground
+    assert check_cli.main(["--spec", str(passing), *root]) == 0
+    assert check_cli.main(["--spec", str(passing), "--mode", "dark", *root]) == 1   # dark on a dark ground
     accepted = _spec(tmp_path, passing.read_text(encoding="utf-8").replace(
         "    tests:\n      ground: bg\n",
         "    tests:\n      ground: bg\n      accepted:\n        - {token: dark, reason: framed}\n"),
         "accepted.yml")
-    assert check_palette.main(["--spec", str(accepted), "--mode", "dark", *root]) == 0
-    assert check_palette.main(["--spec", str(passing), "--mode", "sepia", *root]) == 2
-    assert check_palette.main(["--spec", str(passing), "--palette", str(tmp_path / "absent.tex"), *root]) == 2
+    assert check_cli.main(["--spec", str(accepted), "--mode", "dark", *root]) == 0
+    assert check_cli.main(["--spec", str(passing), "--mode", "sepia", *root]) == 2
+    assert check_cli.main(["--spec", str(passing), "--palette", str(tmp_path / "absent.tex"), *root]) == 2
     scheme = tmp_path / "scheme.tex"
     scheme.write_text("\\definecolor{mist}{HTML}{777777}\n", encoding="utf-8")   # a scheme retunes a hue
-    assert check_palette.main(["--spec", str(passing), "--palette", str(scheme), *root]) == 1  # stale acceptance
+    assert check_cli.main(["--spec", str(passing), "--palette", str(scheme), *root]) == 1  # stale acceptance
     proof = tmp_path / "proof.tex"
-    assert check_palette.main(["--spec", str(spec), "--emit-proof", str(proof), *root]) == 0
+    assert check_cli.main(["--spec", str(spec), "--emit-proof", str(proof), *root]) == 0
     assert proof.exists()
 
 
 def test_recolour_assets_refuses_to_overwrite_its_sources(tmp_path: Path) -> None:
     spec = _spec(tmp_path)
     argv = ["--spec", str(spec), "--source", str(tmp_path), "--out", str(tmp_path), "--root", str(tmp_path)]
-    assert recolour_assets.main(argv) == 2
+    assert recolour_cli.main(argv) == 2
 
 
 def test_emitted_layers_and_css_block(tmp_path: Path) -> None:
     spec = load_spec(_spec(tmp_path), tmp_path)
     values = emit.latex_values(spec.base, "x/colors-values.tex")
+    assert values.startswith("% Generated from x/colors-values.tex by chromata-build.\n")
     assert "\\definecolor{warmdeep}{HTML}{FF0000}" in values and "% deep -- warm deep" in values
     assert parse_palette(values)["coolwash"] == "E6E6FF"
     roles = emit.latex_roles(spec, "x/colors-roles.tex")
@@ -279,26 +314,111 @@ def test_emitted_layers_and_css_block(tmp_path: Path) -> None:
     assert block.startswith("  /* palette: palette.yml") and block.endswith("/* palette: end */")
 
 
-def test_build_palette_writes_checks_and_scans(tmp_path: Path) -> None:
-    import subprocess
-    import build_palette
-    folder = tmp_path / "artifacts" / "deck"
+def test_tex_prefixes_separate_value_and_role_namespaces(tmp_path: Path) -> None:
+    spec = load_spec(_spec(tmp_path), tmp_path)
+    values_projection = emit.TeXProjection.for_spec(spec.base, values_prefix="house-hue-")
+    roles_projection = emit.TeXProjection.for_spec(
+        spec,
+        values_prefix="house-hue-",
+        roles_prefix="house-",
+        names={"first": "first-input"},
+    )
+    values = emit.latex_values(spec.base, "values.tex", values_projection)
+    roles = emit.latex_roles(spec, "roles.tex", projection=roles_projection)
+    assert "\\definecolor{house-hue-warmdeep}" in values
+    assert "\\colorlet{house-first-input}{house-hue-warmdeep}" in roles
+    assert "\\colorlet{house-accent}{house-third}" in roles
+
+
+def test_build_command_writes_and_checks_explicit_targets(tmp_path: Path) -> None:
+    folder = tmp_path / "deck"
     folder.mkdir(parents=True)
-    _spec(folder, root=tmp_path)
-    page = folder / "index.html"
-    page.write_text("<style>\n  /* palette: artifacts/deck/palette.yml */\n  /* palette: end */\n</style>\n",
-                    encoding="utf-8")
-    (folder / "slides.tex").write_text("\\input{colors-values}\n% \\definecolor{old}{HTML}{000000}\n",
-                                       encoding="utf-8")
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    root = ["--root", str(tmp_path)]
-    assert build_palette.main([*root, "--check"]) == 1                 # outputs missing
-    assert build_palette.main(root) == 0
+    spec = _spec(folder, root=tmp_path)
+    css = folder / "palette.css"
+    args = ["--root", str(tmp_path), "--spec", str(spec), "--css-out", str(css)]
+    assert build_cli.main([*args, "--check"]) == 1
+    assert build_cli.main(args) == 0
     assert (folder / "colors-roles.tex").exists() and not (folder / "colors-values.tex").exists()
-    assert "--accent: #0000FF;" in page.read_text(encoding="utf-8")
-    assert build_palette.main([*root, "--check"]) == 0
-    (folder / "slides.tex").write_text("\\definecolor{local}{HTML}{000000}\n", encoding="utf-8")
-    assert build_palette.main([*root, "--check"]) == 1                 # a colour outside a palette
+    assert "--accent: #0000FF;" in css.read_text(encoding="utf-8")
+    assert "/* palette: deck/palette.yml -- generated by chromata-build" in css.read_text(
+        encoding="utf-8"
+    )
+    assert str(tmp_path) not in css.read_text(encoding="utf-8")
+    roles = (folder / "colors-roles.tex").read_text(encoding="utf-8")
+    assert roles.startswith("% Generated from deck/palette.yml by chromata-build.\n")
+    assert str(tmp_path) not in roles
+    assert build_cli.main([*args, "--check"]) == 0
+
+
+@pytest.mark.parametrize("option", [
+    ["--tex-name", "missing-separator"],
+    ["--source-label", "bad*/comment"],
+])
+def test_build_command_rejects_an_unsafe_tex_name(option: list[str]) -> None:
+    with pytest.raises(SystemExit):
+        build_cli.build_parser().parse_args(
+            ["--root", ".", "--spec", "palette.yml", *option]
+        )
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--roles-out", "$SPEC"],
+        ["--roles-out", "same.tex", "--css-out", "same.tex"],
+        ["--tex-name", "absent=public"],
+        ["--tex-name", "first=one", "--tex-name", "first=two"],
+        ["--tex-name", "first=shared", "--tex-name", "second=shared"],
+        ["--tex-name", "first=bad\\name"],
+        ["--roles-prefix", "bad{prefix}"],
+    ],
+)
+def test_build_command_rejects_ambiguous_outputs(tmp_path: Path, extra: list[str]) -> None:
+    spec = _spec(tmp_path)
+    resolved = [str(spec) if value == "$SPEC" else value for value in extra]
+    args = ["--root", str(tmp_path), "--spec", str(spec), *resolved]
+    assert build_cli.main(args) == 2
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"roles_prefix": "bad{prefix}"},
+        {"names": {"first": "bad\\name"}},
+        {"names": {"absent": "public"}},
+        {"names": {"first": "shared", "second": "shared"}},
+        {"names": {"first": "black"}},
+    ],
+)
+def test_projection_api_rejects_an_invalid_tex_interface(
+    tmp_path: Path, settings: dict[str, object]
+) -> None:
+    spec = load_spec(_spec(tmp_path), tmp_path)
+    with pytest.raises(emit.ProjectionError):
+        emit.TeXProjection.for_spec(spec, **settings)
+
+
+def test_projection_api_rejects_a_different_token_role_partition(tmp_path: Path) -> None:
+    spec = load_spec(_spec(tmp_path), tmp_path)
+    values_projection = emit.TeXProjection.for_spec(spec.base)
+    with pytest.raises(emit.ProjectionError, match="partition"):
+        emit.latex_roles(spec, "roles.tex", projection=values_projection)
+
+
+def test_local_resolver_rejects_root_escape(tmp_path: Path) -> None:
+    with pytest.raises(SpecError, match="escapes"):
+        LocalResolver(tmp_path).resolve("../outside/palette.yml", source=tmp_path / "palette.yml")
+
+
+def test_load_spec_rejects_extension_cycles(tmp_path: Path) -> None:
+    first = tmp_path / "palette.yml"
+    second_dir = tmp_path / "second"
+    second_dir.mkdir()
+    second = second_dir / "palette.yml"
+    first.write_text("schema_version: 1\nlevel: concepts\nextends: second/palette.yml\n", encoding="utf-8")
+    second.write_text("schema_version: 1\nlevel: concepts\nextends: palette.yml\n", encoding="utf-8")
+    with pytest.raises(SpecError, match="cycle"):
+        load_spec(first, tmp_path)
 
 
 HUES = """
@@ -350,7 +470,7 @@ def test_levels_bind_concepts_to_hues(tmp_path: Path) -> None:
     assert spec.tests.ladder["transform"] == ("azure", 1)            # reached through the role
     text, failures = report(spec.values(), spec.tests, "toy")
     assert "adjacent rungs of `azure'" in text and failures >= 1
-    measured = check_palette.measured_palette(tmp_path / "concepts" / "palette.yml", [], "dark", tmp_path)
+    measured = check_cli.measured_palette(tmp_path / "concepts" / "palette.yml", [], "dark", tmp_path)
     assert measured["ground"] == "111111"                            # role override in the checker
 
 

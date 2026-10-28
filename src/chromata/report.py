@@ -24,8 +24,8 @@ from __future__ import annotations
 import math
 from itertools import combinations
 
-from palette_tools.colour import VISION_MODES, contrast, delta_e, oklab, simulate
-from palette_tools.spec import AcceptanceTests
+from chromata.colour import VISION_MODES, contrast, delta_e, oklab, simulate
+from chromata.spec import AcceptanceTests
 
 
 def report(palette: dict[str, str], tests: AcceptanceTests, label: str) -> tuple[str, int]:

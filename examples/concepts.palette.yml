@@ -1,0 +1,13 @@
+# valid concept-binding example; resolve extends from the examples folder
+schema_version: 1
+level: concepts
+extends: style.palette.yml
+
+roles:
+  source: {of: identity, use: source quantity, contrast: mark}
+  result: {of: textprimary, use: derived result, contrast: mark}
+
+tests:
+  ground: pageground
+  groups:
+    argument: [source, result]

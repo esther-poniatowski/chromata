@@ -1,10 +1,8 @@
 # Schema of a colour palette, written as JSON Schema (draft 2020-12) in YAML.
 #
-# This file is the single source of truth for the palette format, instantiated by the skeleton
-# utils/templates/palette.yml. A palette file is named palette.yml and sits beside the sources
-# that load it. utils/scripts/build_palette.py
-# validates it against this schema and generates its LaTeX layers and its CSS blocks;
-# utils/scripts/check_palette.py measures it against its acceptance tests.
+# This file is the single source of truth for the palette format. A palette file sits beside the
+# sources that load it. chromata-build generates its LaTeX and CSS projections, and chromata-check
+# measures it against its acceptance tests.
 
 $schema: https://json-schema.org/draft/2020-12/schema
 $id: palette.schema.yaml
@@ -29,9 +27,9 @@ properties:
       a hue.
   extends:
     type: string
-    pattern: '^(?!/)(.*/)?palette\.yml$'
+    pattern: '^(?!/).*palette\.yml$'
     description: >-
-      The path from the vault root to the palette whose tokens and roles this palette may
+      The path from the declared resource root to the palette whose tokens and roles this palette may
       name. The documents load the extended palette before this one.
   layers:
     type: object

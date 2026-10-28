@@ -9,8 +9,8 @@ it as a literal ``\\definecolor``.
 
 from __future__ import annotations
 
-from palette_tools.colour import VISION_MODES, simulate
-from palette_tools.spec import AcceptanceTests
+from chromata.colour import VISION_MODES, simulate
+from chromata.spec import AcceptanceTests
 
 _PREAMBLE = r"""\documentclass[10pt]{article}
 \usepackage[a4paper,landscape,margin=10mm]{geometry}

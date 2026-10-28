@@ -1,9 +1,9 @@
 """
 Repaint two-colour raster pictures into the two target tokens of a palette.
 
-Usage, from the workspace root (never from the base conda environment)::
+Usage::
 
-    conda run -n geonexus python utils/scripts/recolour_assets.py \\
+    chromata-recolour --root . \\
         --spec path/to/palette.yml [--palette path/to/scheme.tex ...] \\
         --source path/to/assets --out path/to/new-assets
 
@@ -18,14 +18,10 @@ import argparse
 import sys
 from pathlib import Path
 
-import numpy as np
-
-from palette_tools.colour import hex_to_srgb
-from check_palette import measured_palette
-from vault_paths import DEFAULT_ROOT
-from palette_tools.latex_palette import PaletteSourceError
-from palette_tools.recolour import RecolourError, recolour_row
-from palette_tools.spec import SpecError, load_spec
+from chromata.check_cli import measured_palette
+from chromata.colour import hex_to_srgb
+from chromata.latex_palette import PaletteSourceError
+from chromata.spec import SpecError, load_spec
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,29 +33,40 @@ def build_parser() -> argparse.ArgumentParser:
                         help="LaTeX sources overriding token values, such as a candidate scheme")
     parser.add_argument("--source", required=True, type=Path, help="folder of the source pictures")
     parser.add_argument("--out", required=True, type=Path, help="folder of the repainted pictures")
-    parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="vault root, against which extends resolves")
+    parser.add_argument("--root", required=True, type=Path,
+                        help="local resource root against which path references resolve")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the command; return the exit status."""
     args = build_parser().parse_args(argv)
+    try:
+        import numpy as np
+
+        from chromata.recolour import RecolourError, recolour_row
+    except ModuleNotFoundError:
+        print(
+            "chromata-recolour: raster support is not installed; install `chromata[raster]'",
+            file=sys.stderr,
+        )
+        return 2
     if args.out.resolve() == args.source.resolve():
-        print("recolour_assets: --out must differ from --source", file=sys.stderr)
+        print("chromata-recolour: --out must differ from --source", file=sys.stderr)
         return 2
     try:
         palette = measured_palette(args.spec, args.palette, None, args.root)
         spec = load_spec(args.spec, args.root)
     except (PaletteSourceError, SpecError) as error:
-        print(f"recolour_assets: {error}", file=sys.stderr)
+        print(f"chromata-recolour: {error}", file=sys.stderr)
         return 2
     plan = spec.recolour
     if plan is None:
-        print("recolour_assets: the palette holds no recolour table", file=sys.stderr)
+        print("chromata-recolour: the palette holds no recolour table", file=sys.stderr)
         return 2
     missing = [t for t in plan.targets if t not in palette]
     if missing:
-        print(f"recolour_assets: target tokens absent from the palette: {missing}", file=sys.stderr)
+        print(f"chromata-recolour: target tokens absent from the palette: {missing}", file=sys.stderr)
         return 2
     targets = (np.array(hex_to_srgb(palette[plan.targets[0]])),
                np.array(hex_to_srgb(palette[plan.targets[1]])))
@@ -70,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
             print()
             print("\n".join(recolour_row(row, args.source, args.out, targets)))
     except (RecolourError, FileNotFoundError) as error:
-        print(f"recolour_assets: {error}", file=sys.stderr)
+        print(f"chromata-recolour: {error}", file=sys.stderr)
         return 2
     print(f"\nwrote {3 * len(plan.rows)} pictures to {args.out}/")
     return 0

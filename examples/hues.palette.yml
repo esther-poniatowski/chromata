@@ -1,0 +1,12 @@
+# valid hue-library example; chromata-build generates colors-values.tex beside this file
+schema_version: 1
+level: hues
+
+layers:
+  foundation:
+    gloss: neutral and accent colours
+    tokens:
+      paper: {value: FFFFFF, use: page ground}
+      ink: {value: "171E23", use: primary text}
+      azuredeep: {value: "003A62", use: deep azure, pole: azure, rung: deep}
+      azurebright: {value: "0B90E4", use: bright azure, pole: azure, rung: bright}

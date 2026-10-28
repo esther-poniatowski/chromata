@@ -1,0 +1,55 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install verification dependencies
+        run: python -m pip install '.[dev]'
+      - name: Run tests
+        run: python -m pytest
+      - name: Check Python sources
+        run: python -m ruff check src tests
+      - name: Build distributions
+        run: python -m build
+      - name: Verify the installed wheel
+        run: |
+          python -m venv /tmp/chromata-wheel
+          /tmp/chromata-wheel/bin/python -m pip install dist/chromata-*.whl
+          mkdir -p /tmp/chromata-smoke
+          printf '%s\n' \
+            'schema_version: 1' \
+            'level: hues' \
+            'layers:' \
+            '  foundation:' \
+            '    gloss: smoke-test colours' \
+            '    tokens:' \
+            '      ink: {value: "171E23", use: primary text}' \
+            > /tmp/chromata-smoke/hues.palette.yml
+          cd /tmp
+          /tmp/chromata-wheel/bin/chromata-build \
+            --root /tmp/chromata-smoke \
+            --spec /tmp/chromata-smoke/hues.palette.yml
+          /tmp/chromata-wheel/bin/chromata-build \
+            --root /tmp/chromata-smoke \
+            --spec /tmp/chromata-smoke/hues.palette.yml \
+            --check
+          /tmp/chromata-wheel/bin/chromata-check --help
+          /tmp/chromata-wheel/bin/chromata-recolour --help
+          /tmp/chromata-wheel/bin/python -c \
+            'from importlib.resources import files; assert files("chromata.schemas").joinpath("palette.schema.yaml").is_file()'

@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chromata"
+version = "0.1.0"
+authors = [{name = "Esther Poniatowski", email = "esther.poniatowski@ens.psl.eu"}]
+description = "Validates colour palettes and generates their LaTeX, CSS, and raster projections."
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">=3.12"
+dependencies = [
+  "jsonschema>=4.23",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+raster = [
+  "numpy>=2.0",
+  "Pillow>=11.0",
+]
+dev = [
+  "build>=1.2",
+  "pytest>=8.0",
+  "numpy>=2.0",
+  "Pillow>=11.0",
+  "ruff>=0.14",
+]
+
+[project.scripts]
+chromata-build = "chromata.build_cli:main"
+chromata-check = "chromata.check_cli:main"
+chromata-recolour = "chromata.recolour_cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"chromata.schemas" = ["*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --tb=short"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

@@ -1,9 +1,9 @@
 """
-Palette tools: load a colour palette, generate its LaTeX and CSS, measure it, and repaint raster
-assets into it.
+Chromata loads a colour palette, generates its LaTeX and CSS projections, measures its acceptance
+criteria, and repaints raster assets into its declared colours.
 
-A consumer owns one ``palette.yml`` under ``utils/schemas/palette.schema.yaml``, holding its tokens,
-roles, modes and acceptance tests; the package owns only the colour science and the procedures.
+A consumer owns its palette specifications and generated files. Chromata owns the schema, colour
+science and transformations. Repository discovery and policy remain with each consumer.
 
 Modules
 -------

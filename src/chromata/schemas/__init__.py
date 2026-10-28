@@ -1,0 +1,1 @@
+"""Schemas installed with Chromata."""
