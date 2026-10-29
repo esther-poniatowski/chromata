@@ -7,8 +7,6 @@ package provides three independent commands:
 - `chromata-check` applies declared separation and contrast criteria;
 - `chromata-recolour` repaints declared two-colour raster assets.
 
-The repository is private. No licence to redistribute or modify its contents is granted.
-
 ## Ownership boundary
 
 Chromata owns the palette schema, colour calculations, projections, proof sheets, and raster
@@ -71,3 +69,7 @@ python -m pytest
 python -m ruff check src tests
 python -m build
 ```
+
+## License
+
+The [license terms](LICENSE) apply under the General Public License, release 3 or any subsequent release.

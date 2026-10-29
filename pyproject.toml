@@ -9,6 +9,7 @@ authors = [{name = "Esther Poniatowski", email = "esther.poniatowski@ens.psl.eu"
 description = "Validates colour palettes and generates their LaTeX, CSS, and raster projections."
 readme = {file = "README.md", content-type = "text/markdown"}
 requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
 dependencies = [
   "jsonschema>=4.23",
   "PyYAML>=6.0",
