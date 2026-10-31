@@ -8,10 +8,10 @@ same schema and colour model, so they change as one release unit.
 
 The repository owns:
 
-- the versioned palette schema and loader;
+- the versioned palette and build-manifest schemas and their loaders;
 - the resolver protocol for referenced palettes;
 - colour conversion, contrast, perceptual distance, and vision simulation;
-- deterministic LaTeX and CSS projection;
+- deterministic LaTeX and CSS projection, including the refresh of a marked block inside a page;
 - acceptance reports and proof sheets;
 - raster recolouring based on a palette record;
 - the three commands that expose those operations.
@@ -26,9 +26,11 @@ A consuming repository owns:
 - rules that prohibit colour declarations outside a palette;
 - exceptions for venue templates, archives, or other repository classes.
 
-Therefore, Chromata does not scan a Git repository by default. Its commands require explicit input
-and output locations. A consumer may implement a repository adapter that discovers those inputs
-and calls the package API.
+Therefore, Chromata does not scan a Git repository. Its commands require explicit input and
+output locations, given either as command options or as the entries of a build manifest written by
+the consumer. A consumer may also implement a repository adapter that discovers those inputs and
+calls the package API. The [declared-build-runs record](declared-build-runs.md) fixes the manifest
+and the refresh of a marked page block.
 
 ## Dependency boundary
 

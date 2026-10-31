@@ -57,6 +57,29 @@ Pass each resolved external file as `--resource <logical-reference>=<resolved-pa
 resolves the value relative to `--root`. From a bound palette, Chromata resolves a sibling path
 within the bound file's directory.
 
+`--css-page PAGE` refreshes the CSS block of the palette inside an existing web page. The page
+marks the block with `/* palette: LABEL */` and `/* palette: end */`, where `LABEL` is the source
+label of the palette. A refresh rewrites only the lines between the markers, and fails when a
+marker is missing or duplicated.
+
+A build manifest lists every palette of a consumer, with the settings of each, so that one run
+builds or checks all of them with one exit status:
+
+```sh
+chromata-build --root . --manifest chromata.yml --check
+```
+
+```yaml
+schema_version: 1
+palettes:
+  - spec: style/hues/palette.yml
+  - spec: style/palette.yml
+    css_pages: [site/index.html]
+```
+
+Manifest paths are relative to `--root`. The [declared-build-runs record](docs/architecture/declared-build-runs.md)
+fixes the manifest, the marker syntax and the exit statuses.
+
 Generated files name their source relative to `--root`. When the logical resource root differs
 from the desired provenance label, `--source-label` supplies that stable label explicitly.
 
