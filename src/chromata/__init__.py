@@ -15,6 +15,12 @@ spec
     A palette file, loaded and checked: tokens, roles, modes, CSS names, tests and recolouring rows.
 emit
     The LaTeX layers and the CSS block generated from a palette.
+page
+    The marked CSS blocks of an existing web page, refreshed in place.
+build
+    The projections of one or more palettes, planned in full before any target is written.
+manifest
+    A build manifest: every palette of a consumer and the targets of its projections.
 report
     The acceptance tests applied to a palette.
 proof

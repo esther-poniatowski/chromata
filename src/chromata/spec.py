@@ -20,15 +20,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from importlib.resources import files
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal, Protocol
 
 import yaml
-from jsonschema import Draft202012Validator
 
 from chromata.colour import hex_to_srgb, srgb_to_hex
+from chromata.schemas import PALETTE_SCHEMA, schema_violations
 
 Strategy = Literal["unmix", "rotate"]
 
@@ -278,12 +277,6 @@ class PaletteSpec:
         return self.override_roles(self.bind_roles(self.token_values(mode)), mode)
 
 
-def _schema_validator() -> Draft202012Validator:
-    schema = files("chromata.schemas").joinpath("palette.schema.yaml")
-    with schema.open(encoding="utf-8") as handle:
-        return Draft202012Validator(yaml.safe_load(handle))
-
-
 def _hue_word(name: str) -> str | None:
     lowered = name.lower()
     return next((word for word in HUE_WORDS if word in lowered), None)
@@ -403,11 +396,9 @@ def load_spec(
         raise SpecError(f"no such palette: {path}")
     with path.open(encoding="utf-8") as handle:
         data = yaml.safe_load(handle)
-    errors = sorted(_schema_validator().iter_errors(data), key=lambda e: list(e.absolute_path))
-    if errors:
-        details = "; ".join(f"{'/'.join(map(str, e.absolute_path)) or '(root)'}: {e.message}"
-                            for e in errors)
-        raise SpecError(f"{path}: schema violation: {details}")
+    violations = schema_violations(PALETTE_SCHEMA, data)
+    if violations:
+        raise SpecError(f"{path}: schema violation: {'; '.join(violations)}")
     active_resolver = resolver or LocalResolver(root or path.parent)
     base = (
         load_spec(

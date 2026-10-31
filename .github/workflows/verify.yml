@@ -49,7 +49,13 @@ jobs:
             --root /tmp/chromata-smoke \
             --spec /tmp/chromata-smoke/hues.palette.yml \
             --check
+          printf '%s\n' 'schema_version: 1' 'palettes:' '  - spec: hues.palette.yml' \
+            > /tmp/chromata-smoke/chromata.yml
+          /tmp/chromata-wheel/bin/chromata-build \
+            --root /tmp/chromata-smoke \
+            --manifest /tmp/chromata-smoke/chromata.yml \
+            --check
           /tmp/chromata-wheel/bin/chromata-check --help
           /tmp/chromata-wheel/bin/chromata-recolour --help
           /tmp/chromata-wheel/bin/python -c \
-            'from importlib.resources import files; assert files("chromata.schemas").joinpath("palette.schema.yaml").is_file()'
+            'from importlib.resources import files; assert all(files("chromata.schemas").joinpath(name).is_file() for name in ("palette.schema.yaml", "build-manifest.schema.yaml"))'

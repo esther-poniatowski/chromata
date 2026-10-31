@@ -1,4 +1,14 @@
-"""Generate deterministic LaTeX and CSS projections from one palette specification."""
+"""
+Generate deterministic LaTeX and CSS projections from palette specifications.
+
+``--spec`` projects one palette, configured by the options of this command. ``--manifest`` projects
+every palette listed in a build manifest, in one run with one exit status. ``--css-page``, or the
+``css_pages`` key of a manifest entry, refreshes the block marked with the palette's source label
+inside an existing web page, and leaves every byte outside that block unchanged.
+
+Every input is checked before any target is written. The exit status is 0 when every target is
+current or written, 1 when ``--check`` finds a stale target, and 2 when an input is invalid.
+"""
 
 from __future__ import annotations
 
@@ -6,17 +16,29 @@ import argparse
 import sys
 from pathlib import Path
 
-from chromata.cli_resources import add_resource_argument, resource_resolver
-from chromata.emit import (
-    ROLES_FILE,
-    VALUES_FILE,
-    ProjectionError,
-    TeXProjection,
-    css_block,
-    display_path,
-    outputs,
+from chromata.build import (
+    BuildRequest,
+    changed_targets,
+    comment_label_problem,
+    plan_build,
+    shown,
+    write_targets,
 )
-from chromata.spec import PaletteSpec, SpecError, load_spec
+from chromata.cli_resources import add_resource_argument, resource_resolver
+from chromata.manifest import ManifestError, load_manifest
+from chromata.spec import SpecError
+
+#: Options that configure one palette, which a manifest entry declares instead.
+PER_PALETTE_OPTIONS: dict[str, str] = {
+    "values_out": "--values-out",
+    "roles_out": "--roles-out",
+    "css_out": "--css-out",
+    "css_page": "--css-page",
+    "source_label": "--source-label",
+    "values_prefix": "--values-prefix",
+    "roles_prefix": "--roles-prefix",
+    "tex_name": "--tex-name",
+}
 
 
 def _rename(value: str) -> tuple[str, str]:
@@ -29,15 +51,22 @@ def _rename(value: str) -> tuple[str, str]:
 
 def _source_label(value: str) -> str:
     """Accept a source label that cannot terminate a generated comment."""
-    if not value or "\n" in value or "\r" in value or "*/" in value:
-        raise argparse.ArgumentTypeError("source label cannot contain a line break or `*/'")
+    problem = comment_label_problem(value)
+    if problem is not None:
+        raise argparse.ArgumentTypeError(problem)
     return value
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Return the command-line parser."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--spec", required=True, type=Path, help="palette specification")
+    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--spec", type=Path, help="palette specification")
+    inputs.add_argument(
+        "--manifest",
+        type=Path,
+        help="build manifest listing every palette of the run and its targets",
+    )
     parser.add_argument(
         "--root",
         required=True,
@@ -49,14 +78,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--roles-out", type=Path, help="target of the LaTeX role layer")
     parser.add_argument("--css-out", type=Path, help="target of the standalone CSS block")
     parser.add_argument(
+        "--css-page",
+        action="append",
+        default=[],
+        type=Path,
+        metavar="PAGE",
+        help="web page whose block marked with the source label is refreshed in place; "
+             "repeat as needed",
+    )
+    parser.add_argument(
         "--source-label",
         type=_source_label,
         help="stable logical label printed in generated provenance comments",
     )
-    parser.add_argument("--values-prefix", default="",
-                        help="prefix of generated TeX value names")
-    parser.add_argument("--roles-prefix", default="",
-                        help="prefix of generated TeX role names")
+    parser.add_argument("--values-prefix", help="prefix of generated TeX value names")
+    parser.add_argument("--roles-prefix", help="prefix of generated TeX role names")
     parser.add_argument(
         "--tex-name",
         action="append",
@@ -69,62 +105,31 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _accept(target: Path, expected: str, *, check: bool) -> bool:
-    """Check or write one target; return whether its prior contents were current."""
-    current = target.read_text(encoding="utf-8") if target.exists() else None
-    if current == expected:
-        return True
-    if check:
-        print(f"stale: {target}")
-        return False
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(expected, encoding="utf-8")
-    print(f"wrote {target}")
-    return True
+def _requests(args: argparse.Namespace, root: Path) -> tuple[BuildRequest, ...]:
+    """
+    Return the build requests of the run.
 
-
-def _source_paths(spec: PaletteSpec) -> set[Path]:
-    """Return every palette file loaded into one specification."""
-    paths: set[Path] = set()
-    current: PaletteSpec | None = spec
-    while current is not None:
-        paths.add(current.path.resolve())
-        current = current.base
-    return paths
-
-
-def _projection_problems(spec: PaletteSpec, args: argparse.Namespace) -> list[str]:
-    """Return unsafe or ambiguous projection settings."""
-    problems: list[str] = []
-    if args.source_label is None:
-        try:
-            spec.path.relative_to(args.root.resolve())
-        except ValueError:
-            problems.append("a palette outside --root requires --source-label")
-    if args.values_out is not None and not spec.layers:
-        problems.append("--values-out was given for a palette without value layers")
-    if args.roles_out is not None and not spec.roles:
-        problems.append("--roles-out was given for a palette without roles")
-
-    targets: list[Path] = []
-    if spec.layers:
-        targets.append((args.values_out or spec.path.parent / VALUES_FILE).resolve())
-    if spec.roles:
-        targets.append((args.roles_out or spec.path.parent / ROLES_FILE).resolve())
-    if args.css_out is not None:
-        targets.append(args.css_out.resolve())
-    duplicates = {target for target in targets if targets.count(target) > 1}
-    problems.extend(f"output target is declared twice: {target}" for target in sorted(duplicates))
-    problems.extend(
-        f"output target would overwrite a palette input: {target}"
-        for target in sorted(set(targets) & _source_paths(spec))
-    )
-
-    entries: list[tuple[str, str]] = args.tex_name
-    sources = [source for source, _ in entries]
-    duplicate_sources = {source for source in sources if sources.count(source) > 1}
-    problems.extend(f"TeX name is mapped twice: {source}" for source in sorted(duplicate_sources))
-    return problems
+    Raises
+    ------
+    ManifestError
+        If the manifest is invalid, or a per-palette option accompanies it.
+    """
+    if args.manifest is None:
+        return (BuildRequest(
+            spec=args.spec,
+            values_out=args.values_out,
+            roles_out=args.roles_out,
+            css_out=args.css_out,
+            css_pages=tuple(args.css_page),
+            source_label=args.source_label,
+            values_prefix=args.values_prefix or "",
+            roles_prefix=args.roles_prefix or "",
+            tex_names=tuple(args.tex_name),
+        ),)
+    given = [option for key, option in PER_PALETTE_OPTIONS.items() if getattr(args, key)]
+    if given:
+        raise ManifestError(f"{', '.join(given)}: declare per-palette settings in the manifest")
+    return load_manifest(args.manifest, root)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -132,48 +137,29 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     root = args.root.resolve()
     try:
-        spec = load_spec(args.spec, root, resolver=resource_resolver(root, args.resource))
-    except SpecError as error:
+        resolver = resource_resolver(root, args.resource)
+        requests = _requests(args, root)
+    except (ManifestError, SpecError) as error:
         print(f"chromata-build: {error}", file=sys.stderr)
         return 2
 
-    problems = _projection_problems(spec, args)
-    if problems:
-        for problem in problems:
+    plan = plan_build(requests, root, resolver, exhaustive_pages=args.manifest is not None)
+    if plan.problems:
+        for problem in plan.problems:
             print(f"chromata-build: {problem}", file=sys.stderr)
         return 2
 
-    try:
-        projection = TeXProjection.for_spec(
-            spec,
-            values_prefix=args.values_prefix,
-            roles_prefix=args.roles_prefix,
-            names=dict(args.tex_name),
-        )
-    except ProjectionError as error:
-        print(f"chromata-build: {error}", file=sys.stderr)
-        return 2
-
-    rendered = outputs(
-        spec,
-        root,
-        values_target=args.values_out,
-        roles_target=args.roles_out,
-        projection=projection,
-        source_label=args.source_label,
-    )
-    if args.css_out is not None:
-        if not spec.css:
-            print("chromata-build: --css-out requires a palette with CSS bindings", file=sys.stderr)
-            return 2
-        source = args.source_label or display_path(spec.path, root)
-        rendered[args.css_out] = css_block(spec, source, "") + "\n"
-
-    if not rendered:
-        print("chromata-build: the palette declares no projection", file=sys.stderr)
-        return 2
-    current = [_accept(target, text, check=args.check) for target, text in rendered.items()]
-    return 0 if all(current) else 1
+    changed = changed_targets(plan)
+    if args.check:
+        for target in changed:
+            print(f"stale: {shown(target, root)}")
+    else:
+        write_targets(plan, changed)
+        for target in changed:
+            print(f"wrote {shown(target, root)}")
+    outcome = "stale" if args.check else "written"
+    print(f"{plan.palettes} palette(s), {len(plan.texts)} target(s): {len(changed)} {outcome}")
+    return 1 if args.check and changed else 0
 
 
 if __name__ == "__main__":

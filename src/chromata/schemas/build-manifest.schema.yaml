@@ -1,0 +1,75 @@
+# Schema of a build manifest, written as JSON Schema (draft 2020-12) in YAML.
+#
+# A consumer declares in one manifest every palette that chromata-build projects in one run, with
+# the targets of each projection. Every path is relative to the resource root given to --root.
+
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: build-manifest.schema.yaml
+title: Build manifest
+description: >-
+  The palettes of one consumer and the targets of their projections. chromata-build --manifest
+  projects every listed palette in one run, with one exit status. The manifest is the only source
+  of the palettes and pages of a run: Chromata never searches the disk for them.
+type: object
+additionalProperties: false
+required: [schema_version, palettes]
+properties:
+  schema_version:
+    const: 1
+  palettes:
+    type: array
+    minItems: 1
+    items: {$ref: '#/$defs/palette'}
+    description: >-
+      The palettes projected by the run. One palette may be listed twice, for instance with two
+      TeX prefixes, provided that the two entries write distinct targets.
+
+$defs:
+  path:
+    type: string
+    pattern: '^(?![/\\])\S(?:.*\S)?$'
+    description: A path relative to the resource root, which must not escape that root.
+  palette:
+    type: object
+    additionalProperties: false
+    required: [spec]
+    properties:
+      spec:
+        $ref: '#/$defs/path'
+        description: The palette specification.
+      values_out:
+        $ref: '#/$defs/path'
+        description: The target of the LaTeX value layer. The default is beside the palette.
+      roles_out:
+        $ref: '#/$defs/path'
+        description: The target of the LaTeX role layer. The default is beside the palette.
+      css_out:
+        $ref: '#/$defs/path'
+        description: The target of the standalone CSS block.
+      css_pages:
+        type: array
+        minItems: 1
+        uniqueItems: true
+        items: {$ref: '#/$defs/path'}
+        description: >-
+          The web pages whose block marked with the source label of this palette is refreshed in
+          place.
+      source_label:
+        type: string
+        pattern: '^(?!.*\*/)[^\r\n]+$'
+        description: >-
+          The stable label printed in provenance comments and matched by the opening marker of a
+          page. The default is the palette path relative to the resource root.
+      values_prefix:
+        type: string
+        description: The prefix of the generated TeX value names.
+      roles_prefix:
+        type: string
+        description: The prefix of the generated TeX role names.
+      tex_names:
+        type: object
+        propertyNames: {minLength: 1}
+        additionalProperties: {type: string}
+        description: >-
+          The palette names replaced in the generated TeX interface, each mapped to its public
+          TeX name.
