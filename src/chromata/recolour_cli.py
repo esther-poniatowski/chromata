@@ -5,7 +5,7 @@ Usage::
 
     chromata-recolour --root . \\
         --spec path/to/palette.yml [--palette path/to/scheme.tex ...] \\
-        --source path/to/assets --out path/to/new-assets
+        --source path/to/assets --output-dir path/to/new-assets
 
 The ``recolour`` table of the palette names the two target tokens and the rows of pictures.
 Pictures are written under their own filenames; the source folder is never modified, so a repaint
@@ -25,6 +25,14 @@ from chromata.latex_palette import PaletteSourceError
 from chromata.spec import SpecError, load_spec
 
 
+class _DeprecatedOutAlias(argparse.Action):
+    """Accept the former ``--out`` name of ``--output-dir`` for one release, with a warning."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print("chromata-recolour: warning: --out is deprecated; use --output-dir", file=sys.stderr)
+        setattr(namespace, self.dest, values)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The command-line interface."""
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
@@ -33,7 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--palette", nargs="+", default=[], type=Path,
                         help="LaTeX sources overriding token values, such as a candidate scheme")
     parser.add_argument("--source", required=True, type=Path, help="folder of the source pictures")
-    parser.add_argument("--out", required=True, type=Path, help="folder of the repainted pictures")
+    output = parser.add_mutually_exclusive_group(required=True)
+    output.add_argument("--output-dir", type=Path, help="folder of the repainted pictures")
+    output.add_argument("--out", dest="output_dir", type=Path, action=_DeprecatedOutAlias,
+                        help=argparse.SUPPRESS)
     parser.add_argument("--root", required=True, type=Path,
                         help="local resource root against which path references resolve")
     add_resource_argument(parser)
@@ -53,8 +64,8 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    if args.out.resolve() == args.source.resolve():
-        print("chromata-recolour: --out must differ from --source", file=sys.stderr)
+    if args.output_dir.resolve() == args.source.resolve():
+        print("chromata-recolour: --output-dir must differ from --source", file=sys.stderr)
         return 2
     try:
         resolver = resource_resolver(args.root, args.resource)
@@ -78,11 +89,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         for row in plan.rows:
             print()
-            print("\n".join(recolour_row(row, args.source, args.out, targets)))
+            print("\n".join(recolour_row(row, args.source, args.output_dir, targets)))
     except (RecolourError, FileNotFoundError) as error:
         print(f"chromata-recolour: {error}", file=sys.stderr)
         return 2
-    print(f"\nwrote {3 * len(plan.rows)} pictures to {args.out}/")
+    print(f"\nwrote {3 * len(plan.rows)} pictures to {args.output_dir}/")
     return 0
 
 

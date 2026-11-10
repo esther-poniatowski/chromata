@@ -304,8 +304,34 @@ def test_check_palette_exit_codes(tmp_path: Path) -> None:
 
 def test_recolour_assets_refuses_to_overwrite_its_sources(tmp_path: Path) -> None:
     spec = _spec(tmp_path)
-    argv = ["--spec", str(spec), "--source", str(tmp_path), "--out", str(tmp_path), "--root", str(tmp_path)]
+    argv = ["--spec", str(spec), "--source", str(tmp_path), "--output-dir", str(tmp_path),
+            "--root", str(tmp_path)]
     assert recolour_cli.main(argv) == 2
+
+
+@pytest.mark.parametrize(("option", "deprecated"), [("--output-dir", False), ("--out", True)])
+def test_recolour_writes_into_the_output_folder(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], option: str, deprecated: bool
+) -> None:
+    spec = _spec(tmp_path)
+    source, output = tmp_path / "source", tmp_path / "generated"
+    source.mkdir()
+    _picture(source / "a.png", (1.0, 0.0, 0.0))
+    _picture(source / "b.png", (0.0, 1.0, 0.0))
+    _picture(source / "ab.png", (0.5, 0.5, 0.0))
+    argv = ["--spec", str(spec), "--source", str(source), option, str(output), "--root", str(tmp_path)]
+    assert recolour_cli.main(argv) == 0
+    assert all((output / name).exists() for name in ("a.png", "b.png", "ab.png"))
+    warned = "--out is deprecated; use --output-dir" in capsys.readouterr().err
+    assert warned is deprecated
+
+
+@pytest.mark.parametrize("output", [[], ["--output-dir", "a", "--out", "b"]])
+def test_recolour_requires_one_output_folder(tmp_path: Path, output: list[str]) -> None:
+    argv = ["--spec", "palette.yml", "--source", "source", "--root", str(tmp_path), *output]
+    with pytest.raises(SystemExit) as exit_info:
+        recolour_cli.main(argv)
+    assert exit_info.value.code == 2
 
 
 def test_emitted_layers_and_css_block(tmp_path: Path) -> None:
@@ -372,7 +398,7 @@ def test_build_command_writes_and_checks_explicit_targets(tmp_path: Path) -> Non
                 "palette.yml",
                 "--source",
                 "source",
-                "--out",
+                "--output-dir",
                 "out",
             ],
         ),

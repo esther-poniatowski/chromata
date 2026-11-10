@@ -44,7 +44,7 @@ layers beside the specification unless explicit targets are supplied.
 chromata-build --root . --spec style/palette.yml
 chromata-build --root . --spec style/palette.yml --check
 chromata-check --root . --spec style/palette.yml
-chromata-recolour --root . --spec style/palette.yml --source images/source --out images/generated
+chromata-recolour --root . --spec style/palette.yml --source images/source --output-dir images/generated
 ```
 
 `--values-prefix house-hue-` and `--roles-prefix house-` place generated TeX names in
