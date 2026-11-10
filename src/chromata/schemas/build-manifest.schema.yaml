@@ -1,14 +1,16 @@
 # Schema of a build manifest, written as JSON Schema (draft 2020-12) in YAML.
 #
-# A consumer declares in one manifest every palette that chromata-build projects in one run, with
-# the targets of each projection. Every path is relative to the resource root given to --root.
+# A consumer declares in one manifest, its settings file chromata.yml, every palette that
+# chromata-build projects in one run, with the targets of each projection. Every path is relative
+# to the resource root.
 
 $schema: https://json-schema.org/draft/2020-12/schema
 $id: build-manifest.schema.yaml
 title: Build manifest
 description: >-
-  The palettes of one consumer and the targets of their projections. chromata-build --manifest
-  projects every listed palette in one run, with one exit status. The manifest is the only source
+  The palettes of one consumer and the targets of their projections. chromata-build, given
+  --config or finding chromata.yml below the root, projects every listed palette in one run, with
+  one exit status. The manifest is the only source
   of the palettes and pages of a run: Chromata never searches the disk for them.
 type: object
 additionalProperties: false
@@ -37,13 +39,13 @@ $defs:
       spec:
         $ref: '#/$defs/path'
         description: The palette specification.
-      values_out:
+      values_output:
         $ref: '#/$defs/path'
         description: The target of the LaTeX value layer. The default is beside the palette.
-      roles_out:
+      roles_output:
         $ref: '#/$defs/path'
         description: The target of the LaTeX role layer. The default is beside the palette.
-      css_out:
+      css_output:
         $ref: '#/$defs/path'
         description: The target of the standalone CSS block.
       css_pages:

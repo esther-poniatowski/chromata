@@ -37,22 +37,28 @@ python -m pip install '.[raster]'
 
 ## Command examples
 
-Each command receives an explicit palette and resource root. The build command writes its LaTeX
-layers beside the specification unless explicit targets are supplied.
+Each command receives an explicit palette. The build command writes its LaTeX layers beside the
+specification unless explicit targets are supplied.
 
 ```sh
-chromata-build --root . --spec style/palette.yml
-chromata-build --root . --spec style/palette.yml --check
-chromata-check --root . --spec style/palette.yml
-chromata-recolour --root . --spec style/palette.yml --source images/source --output-dir images/generated
+chromata-build --spec style/palette.yml
+chromata-build --spec style/palette.yml --check
+chromata-check --spec style/palette.yml
+chromata-recolour --spec style/palette.yml --source images/source --output-dir images/generated
 ```
 
-`--values-prefix house-hue-` and `--roles-prefix house-` place generated TeX names in
-separate value and role namespaces. Explicit `--values-out`, `--roles-out`, and `--css-out`
-arguments control the projection targets. Repeated `--tex-name SOURCE=TARGET` arguments preserve a
-consumer interface whose public name differs from the palette name.
+Every command resolves its resource root in this order: `-r`, `--root`; the environment variable
+`CHROMATA_ROOT`; the nearest ancestor of the current folder that holds the settings file
+`chromata.yml`, in its `config/tools/` or at its own level; the current folder. A path given on the
+command line is relative to the current folder.
 
-Pass each resolved external file as `--resource <logical-reference>=<resolved-path>`. Then,
+`--values-prefix house-hue-` and `--roles-prefix house-` place generated TeX names in
+separate value and role namespaces. Explicit `--values-output`, `--roles-output`, and
+`--css-output` arguments control the projection targets. Repeated `--tex-name SOURCE=TARGET`
+arguments preserve a consumer interface whose public name differs from the palette name.
+
+Pass each resolved external file as `--resource <logical-reference>=<path>`, where a relative path
+is read from the current folder. Then,
 `--resource` binds the logical `extends` value to the supplied path. Without a binding, Chromata
 resolves the value relative to `--root`. From a bound palette, Chromata resolves a sibling path
 within the bound file's directory.
@@ -62,11 +68,15 @@ marks the block with `/* palette: LABEL */` and `/* palette: end */`, where `LAB
 label of the palette. A refresh rewrites only the lines between the markers, and fails when a
 marker is missing or duplicated.
 
-A build manifest lists every palette of a consumer, with the settings of each, so that one run
-builds or checks all of them with one exit status:
+The settings file of Chromata, `chromata.yml`, is a build manifest: it lists every palette of a
+consumer, with the settings of each, so that one run builds or checks all of them with one exit
+status. Without `--spec`, `chromata-build` reads the file named by `-c`, `--config`, else
+`config/tools/chromata.yml` or `chromata.yml` below the root. A root holding both files is an
+error that names both, and a root holding neither leaves nothing to build:
 
 ```sh
-chromata-build --root . --manifest chromata.yml --check
+chromata-build --check
+chromata-build --config settings/palettes.yml --check
 ```
 
 ```yaml
@@ -77,8 +87,12 @@ palettes:
     css_pages: [site/index.html]
 ```
 
-Manifest paths are relative to `--root`. The [declared-build-runs record](docs/architecture/declared-build-runs.md)
-fixes the manifest, the marker syntax and the exit statuses.
+The paths of the settings file are relative to the root, wherever the file lies. The
+[declared-build-runs record](docs/architecture/declared-build-runs.md) fixes the manifest, the
+marker syntax and the exit statuses.
+
+`chromata-recolour` writes each repainted picture into `--output-dir`, and stops with status 2,
+writing nothing, when a picture would leave that folder or overwrite a source picture.
 
 Generated files name their source relative to `--root`. When the logical resource root differs
 from the desired provenance label, `--source-label` supplies that stable label explicitly.

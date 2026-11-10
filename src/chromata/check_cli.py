@@ -3,8 +3,7 @@ Measure a colour palette against its acceptance tests.
 
 Usage::
 
-    chromata-check --root . \\
-        --spec path/to/palette.yml [--palette path/to/scheme.tex ...] [--mode dark]
+    chromata-check --spec path/to/palette.yml [--palette path/to/scheme.tex ...] [--mode dark]
     ... --grey-for chromecore           # the neutral grey matching a token's lightness
     ... --emit-proof proof.tex          # a self-contained proof sheet, then exit
 
@@ -22,6 +21,7 @@ import sys
 from pathlib import Path
 
 from chromata.cli_resources import add_resource_argument, resource_resolver
+from chromata.cli_settings import add_root_argument, resolve_root
 from chromata.colour import contrast, grey_matching, oklab
 from chromata.latex_palette import PaletteSourceError, parse_palette
 from chromata.proof import proof_sheet
@@ -31,15 +31,17 @@ from chromata.spec import ResourceResolver, SpecError, load_spec
 
 def build_parser() -> argparse.ArgumentParser:
     """The command-line interface."""
-    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
+    parser = argparse.ArgumentParser(
+        description=__doc__.strip().splitlines()[0],
+        allow_abbrev=False,   # a prefix would revive a retired name, such as --out
+    )
     parser.add_argument("--spec", required=True, type=Path, help="the palette file, palette.yml")
     parser.add_argument("--palette", nargs="+", default=[], type=Path,
                         help="LaTeX sources overriding token values, such as a candidate scheme, in load order")
     parser.add_argument("--mode", help="measure the palette in one of its modes, such as dark, "
                                        "against the tests of that mode")
     parser.add_argument("--label", help="name printed in the report (default: the last palette file)")
-    parser.add_argument("--root", required=True, type=Path,
-                        help="local resource root against which path references resolve")
+    add_root_argument(parser)
     add_resource_argument(parser)
     parser.add_argument("--grey-for", metavar="TOKEN",
                         help="print the neutral grey matching that token's OKLab lightness, and exit")
@@ -79,10 +81,11 @@ def measured_palette(
 def main(argv: list[str] | None = None) -> int:
     """Run the command; return the exit status."""
     args = build_parser().parse_args(argv)
+    root = resolve_root(args.root)
     try:
-        resolver = resource_resolver(args.root, args.resource)
-        palette = measured_palette(args.spec, args.palette, args.mode, args.root, resolver)
-        spec = load_spec(args.spec, args.root, resolver=resolver)
+        resolver = resource_resolver(root, args.resource)
+        palette = measured_palette(args.spec, args.palette, args.mode, root, resolver)
+        spec = load_spec(args.spec, root, resolver=resolver)
     except (PaletteSourceError, SpecError) as error:
         print(f"chromata-check: {error}", file=sys.stderr)
         return 2

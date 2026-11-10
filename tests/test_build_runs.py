@@ -88,7 +88,7 @@ palettes:
   - spec: style/palette.yml
     css_pages: [site/index.html]
   - spec: concepts/palette.yml
-    roles_out: concepts/roles.tex
+    roles_output: concepts/roles.tex
 """
 
 
@@ -170,7 +170,7 @@ def test_css_page_refreshes_a_page_in_place(tmp_path: Path) -> None:
         ("<style></style>\n", []),                                       # no markers
         (PAGE.replace("    /* palette: end */\r\n", ""), []),            # no closing marker
         (PAGE, ["--source-label", "end"]),                               # reserved label
-        (PAGE, ["--css-out", "$PAGE"]),                                  # a file target and a page
+        (PAGE, ["--css-output", "$PAGE"]),                               # a file target and a page
     ],
 )
 def test_css_page_rejects_an_unusable_page(tmp_path: Path, page_text: str, extra: list[str]) -> None:
@@ -194,7 +194,7 @@ def test_css_page_requires_css_bindings(tmp_path: Path) -> None:
 def test_manifest_builds_and_checks_every_palette_in_one_run(tmp_path: Path) -> None:
     _consumer(tmp_path)
     manifest = _write(tmp_path / "chromata.yml", MANIFEST)
-    args = ["--root", str(tmp_path), "--manifest", str(manifest)]
+    args = ["--root", str(tmp_path), "--config", str(manifest)]
     targets = [tmp_path / "hues" / "colors-values.tex", tmp_path / "style" / "colors-roles.tex",
                tmp_path / "concepts" / "roles.tex", tmp_path / "site" / "index.html"]
     assert build_cli.main([*args, "--check"]) == 1
@@ -215,9 +215,9 @@ def test_manifest_refreshes_two_palettes_in_one_page(tmp_path: Path) -> None:
     two = PAGE + "\r\n/* palette: concepts/palette.yml */\r\n/* palette: end */\r\n"
     target = _write(tmp_path / "site" / "index.html", two)
     manifest = _write(tmp_path / "chromata.yml", MANIFEST.replace(
-        "    roles_out: concepts/roles.tex\n",
-        "    roles_out: concepts/roles.tex\n    css_pages: [site/index.html]\n"))
-    assert build_cli.main(["--root", str(tmp_path), "--manifest", str(manifest)]) == 0
+        "    roles_output: concepts/roles.tex\n",
+        "    roles_output: concepts/roles.tex\n    css_pages: [site/index.html]\n"))
+    assert build_cli.main(["--root", str(tmp_path), "--config", str(manifest)]) == 0
     refreshed = _read(target)
     assert "--bg: #FFFFFF;" in refreshed and "--signal: #025F99;" in refreshed
 
@@ -242,7 +242,7 @@ def test_manifest_rejects_an_invalid_run_and_writes_nothing(
     manifest = _write(tmp_path / "chromata.yml", MANIFEST)
     target = tmp_path / edited
     _write(target, _read(target).replace(old, new))
-    assert build_cli.main(["--root", str(tmp_path), "--manifest", str(manifest)]) == 2
+    assert build_cli.main(["--root", str(tmp_path), "--config", str(manifest)]) == 2
     assert message in capsys.readouterr().err
     assert not (tmp_path / "hues" / "colors-values.tex").exists()       # the valid palettes too
     assert _read(tmp_path / "site" / "index.html") == PAGE
@@ -253,7 +253,7 @@ def test_manifest_rejects_a_block_of_an_undeclared_palette(tmp_path: Path) -> No
     _write(tmp_path / "site" / "index.html",
            PAGE + "\r\n/* palette: concepts/palette.yml */\r\n/* palette: end */\r\n")
     manifest = _write(tmp_path / "chromata.yml", MANIFEST)
-    assert build_cli.main(["--root", str(tmp_path), "--manifest", str(manifest)]) == 2
+    assert build_cli.main(["--root", str(tmp_path), "--config", str(manifest)]) == 2
 
 
 @pytest.mark.parametrize(
@@ -263,19 +263,95 @@ def test_manifest_rejects_a_block_of_an_undeclared_palette(tmp_path: Path) -> No
 def test_manifest_excludes_per_palette_options(tmp_path: Path, extra: list[str]) -> None:
     _consumer(tmp_path)
     manifest = _write(tmp_path / "chromata.yml", MANIFEST)
-    assert build_cli.main(["--root", str(tmp_path), "--manifest", str(manifest), *extra]) == 2
+    assert build_cli.main(["--root", str(tmp_path), "--config", str(manifest), *extra]) == 2
 
 
-def test_manifest_and_spec_are_exclusive_and_one_is_required() -> None:
+def test_config_and_spec_are_exclusive() -> None:
     parser = build_cli.build_parser()
     with pytest.raises(SystemExit):
-        parser.parse_args(["--root", ".", "--spec", "a.yml", "--manifest", "m.yml"])
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--root", "."])
+        parser.parse_args(["--root", ".", "--spec", "a.yml", "--config", "m.yml"])
+    assert parser.parse_args(["-c", "m.yml"]).config == Path("m.yml")
+
+
+@pytest.mark.parametrize(
+    ("retired", "name"),
+    [(["--manifest", "chromata.yml"], "--manifest"),
+     (["--spec", "p.yml", "--values-out", "v.tex"], "--values-out"),
+     (["--spec", "p.yml", "--roles-out", "r.tex"], "--roles-out"),
+     (["--spec", "p.yml", "--css-out", "p.css"], "--css-out")],
+)
+def test_retired_option_names_are_rejected(
+    capsys: pytest.CaptureFixture[str], retired: list[str], name: str
+) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        build_cli.build_parser().parse_args(["--root", ".", *retired])
+    assert exit_info.value.code == 2
+    assert f"unrecognized arguments: {name}" in capsys.readouterr().err
+
+
+def test_retired_manifest_keys_break_the_schema() -> None:
+    entry = {"spec": "style/palette.yml", "roles_out": "out/roles.tex"}
+    assert schema_violations(MANIFEST_SCHEMA, {"schema_version": 1, "palettes": [entry]}) != []
+
+
+@pytest.mark.parametrize("place", ["chromata.yml", "config/tools/chromata.yml"])
+def test_settings_file_is_found_from_a_subfolder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, place: str
+) -> None:
+    _consumer(tmp_path)
+    _write(tmp_path / place, MANIFEST)
+    monkeypatch.delenv("CHROMATA_ROOT", raising=False)
+    monkeypatch.chdir(tmp_path / "style")
+    assert build_cli.main([]) == 0
+    assert (tmp_path / "concepts" / "roles.tex").exists()                 # paths from the root
+    assert build_cli.main(["--check"]) == 0
+
+
+def test_settings_file_follows_the_root_variable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _consumer(tmp_path)
+    _write(tmp_path / "config" / "tools" / "chromata.yml", MANIFEST)
+    elsewhere = tmp_path.parent / f"{tmp_path.name}-elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    monkeypatch.setenv("CHROMATA_ROOT", str(tmp_path))
+    assert build_cli.main([]) == 0
+    assert (tmp_path / "concepts" / "roles.tex").exists()
+
+
+def test_two_settings_files_are_an_error_naming_both(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _consumer(tmp_path)
+    _write(tmp_path / "chromata.yml", MANIFEST)
+    _write(tmp_path / "config" / "tools" / "chromata.yml", MANIFEST)
+    assert build_cli.main(["--root", str(tmp_path)]) == 2
+    error = capsys.readouterr().err
+    assert str(tmp_path / "chromata.yml") in error
+    assert str(tmp_path / "config" / "tools" / "chromata.yml") in error
+    assert not (tmp_path / "concepts" / "roles.tex").exists()
+
+
+def test_without_spec_or_settings_file_nothing_is_built(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert build_cli.main(["--root", str(tmp_path)]) == 2
+    assert "nothing to build" in capsys.readouterr().err
+
+
+def test_config_path_is_relative_to_the_current_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _consumer(tmp_path)
+    _write(tmp_path / "settings" / "palettes.yml", MANIFEST)
+    monkeypatch.chdir(tmp_path / "settings")
+    assert build_cli.main(["-r", str(tmp_path), "-c", "palettes.yml"]) == 0
+    assert (tmp_path / "concepts" / "roles.tex").exists()                 # paths from the root
 
 
 def test_manifest_reports_a_missing_or_malformed_file(tmp_path: Path) -> None:
-    args = ["--root", str(tmp_path), "--manifest"]
+    args = ["--root", str(tmp_path), "--config"]
     assert build_cli.main([*args, str(tmp_path / "absent.yml")]) == 2
     malformed = _write(tmp_path / "chromata.yml", "palettes: [\n")
     assert build_cli.main([*args, str(malformed)]) == 2
@@ -284,9 +360,9 @@ def test_manifest_reports_a_missing_or_malformed_file(tmp_path: Path) -> None:
 def test_manifest_schema_admits_every_per_palette_setting() -> None:
     entry = {
         "spec": "style/palette.yml",
-        "values_out": "out/values.tex",
-        "roles_out": "out/roles.tex",
-        "css_out": "out/palette.css",
+        "values_output": "out/values.tex",
+        "roles_output": "out/roles.tex",
+        "css_output": "out/palette.css",
         "css_pages": ["site/index.html"],
         "source_label": "house:style",
         "values_prefix": "house-hue-",

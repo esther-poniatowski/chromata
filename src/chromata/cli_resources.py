@@ -9,11 +9,11 @@ from chromata.spec import LocalResolver, MappedResolver, ResourceResolver, SpecE
 
 
 def resource_binding(value: str) -> tuple[str, Path]:
-    """Parse one ``REFERENCE=PATH`` resource binding."""
+    """Parse one ``REFERENCE=PATH`` resource binding, reading ``PATH`` from the current folder."""
     reference, separator, path = value.partition("=")
     if not separator or not reference or not path:
         raise argparse.ArgumentTypeError("expected REFERENCE=PATH")
-    return reference, Path(path)
+    return reference, Path(path).absolute()
 
 
 def add_resource_argument(parser: argparse.ArgumentParser) -> None:
@@ -24,7 +24,8 @@ def add_resource_argument(parser: argparse.ArgumentParser) -> None:
         default=[],
         type=resource_binding,
         metavar="REFERENCE=PATH",
-        help="bind one logical palette reference to a resolved local file; repeat as needed",
+        help="bind one logical palette reference to a local file, relative to the current "
+             "folder; repeat as needed",
     )
 
 

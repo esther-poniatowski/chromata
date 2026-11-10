@@ -309,29 +309,81 @@ def test_recolour_assets_refuses_to_overwrite_its_sources(tmp_path: Path) -> Non
     assert recolour_cli.main(argv) == 2
 
 
-@pytest.mark.parametrize(("option", "deprecated"), [("--output-dir", False), ("--out", True)])
-def test_recolour_writes_into_the_output_folder(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], option: str, deprecated: bool
-) -> None:
+def _sources(folder: Path) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    _picture(folder / "a.png", (1.0, 0.0, 0.0))
+    _picture(folder / "b.png", (0.0, 1.0, 0.0))
+    _picture(folder / "ab.png", (0.5, 0.5, 0.0))
+
+
+def test_recolour_writes_into_the_output_folder(tmp_path: Path) -> None:
     spec = _spec(tmp_path)
     source, output = tmp_path / "source", tmp_path / "generated"
-    source.mkdir()
-    _picture(source / "a.png", (1.0, 0.0, 0.0))
-    _picture(source / "b.png", (0.0, 1.0, 0.0))
-    _picture(source / "ab.png", (0.5, 0.5, 0.0))
-    argv = ["--spec", str(spec), "--source", str(source), option, str(output), "--root", str(tmp_path)]
+    _sources(source)
+    argv = ["--spec", str(spec), "--source", str(source), "--output-dir", str(output),
+            "--root", str(tmp_path)]
     assert recolour_cli.main(argv) == 0
     assert all((output / name).exists() for name in ("a.png", "b.png", "ab.png"))
-    warned = "--out is deprecated; use --output-dir" in capsys.readouterr().err
-    assert warned is deprecated
 
 
-@pytest.mark.parametrize("output", [[], ["--output-dir", "a", "--out", "b"]])
-def test_recolour_requires_one_output_folder(tmp_path: Path, output: list[str]) -> None:
-    argv = ["--spec", "palette.yml", "--source", "source", "--root", str(tmp_path), *output]
+def test_recolour_finds_its_root_from_the_current_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = _spec(tmp_path)
+    (tmp_path / "chromata.yml").write_text("schema_version: 1\npalettes: []\n", encoding="utf-8")
+    _sources(tmp_path / "source")
+    monkeypatch.delenv("CHROMATA_ROOT", raising=False)
+    monkeypatch.chdir(tmp_path / "source")
+    argv = ["--spec", str(spec), "--source", ".", "--output-dir", "../generated"]
+    assert recolour_cli.main(argv) == 0                                   # toyhues/ from the root
+    assert (tmp_path / "generated" / "ab.png").exists()
+
+
+def test_recolour_never_overwrites_a_source_picture(tmp_path: Path) -> None:
+    spec = _spec(tmp_path, SPEC.replace("files: [a.png, b.png, ab.png]",
+                                        "files: [a.png, generated/a.png, ab.png]"))
+    source = tmp_path / "source"
+    _sources(source)
+    (source / "generated").mkdir()
+    _picture(source / "generated" / "a.png", (0.0, 1.0, 0.0))
+    before = (source / "generated" / "a.png").read_bytes()
+    argv = ["--spec", str(spec), "--source", str(source), "--output-dir", str(source / "generated"),
+            "--root", str(tmp_path)]
+    assert recolour_cli.main(argv) == 2
+    assert (source / "generated" / "a.png").read_bytes() == before
+    assert not (source / "generated" / "ab.png").exists()                # nothing written
+
+
+def test_recolour_never_writes_outside_the_output_folder(tmp_path: Path) -> None:
+    spec = _spec(tmp_path, SPEC.replace("files: [a.png, b.png, ab.png]",
+                                        "files: [a.png, b.png, ../ab.png]"))
+    _sources(tmp_path / "pictures" / "source")
+    _picture(tmp_path / "pictures" / "ab.png", (0.5, 0.5, 0.0))
+    argv = ["--spec", str(spec), "--source", str(tmp_path / "pictures" / "source"),
+            "--output-dir", str(tmp_path / "generated" / "new"), "--root", str(tmp_path)]
+    assert recolour_cli.main(argv) == 2
+    assert not (tmp_path / "generated" / "ab.png").exists()
+
+
+def test_recolour_doctests() -> None:
+    assert doctest.testmod(recolour_cli).failed == 0
+
+
+def test_recolour_requires_the_output_folder(tmp_path: Path) -> None:
+    argv = ["--spec", "palette.yml", "--source", "source", "--root", str(tmp_path)]
     with pytest.raises(SystemExit) as exit_info:
         recolour_cli.main(argv)
     assert exit_info.value.code == 2
+
+
+def test_recolour_rejects_the_retired_out_option(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["--spec", "palette.yml", "--source", "source", "--root", str(tmp_path), "--out", "b"]
+    with pytest.raises(SystemExit) as exit_info:
+        recolour_cli.build_parser().parse_args([*argv, "--output-dir", "a"])
+    assert exit_info.value.code == 2
+    assert "unrecognized arguments: --out" in capsys.readouterr().err
 
 
 def test_emitted_layers_and_css_block(tmp_path: Path) -> None:
@@ -369,7 +421,7 @@ def test_build_command_writes_and_checks_explicit_targets(tmp_path: Path) -> Non
     folder.mkdir(parents=True)
     spec = _spec(folder, root=tmp_path)
     css = folder / "palette.css"
-    args = ["--root", str(tmp_path), "--spec", str(spec), "--css-out", str(css)]
+    args = ["--root", str(tmp_path), "--spec", str(spec), "--css-output", str(css)]
     assert build_cli.main([*args, "--check"]) == 1
     assert build_cli.main(args) == 0
     assert (folder / "colors-roles.tex").exists() and not (folder / "colors-values.tex").exists()
@@ -435,8 +487,8 @@ def test_build_command_rejects_an_unsafe_tex_name(option: list[str]) -> None:
 @pytest.mark.parametrize(
     "extra",
     [
-        ["--roles-out", "$SPEC"],
-        ["--roles-out", "same.tex", "--css-out", "same.tex"],
+        ["--roles-output", "$SPEC"],
+        ["--roles-output", "same.tex", "--css-output", "same.tex"],
         ["--tex-name", "absent=public"],
         ["--tex-name", "first=one", "--tex-name", "first=two"],
         ["--tex-name", "first=shared", "--tex-name", "second=shared"],

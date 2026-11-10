@@ -1,9 +1,10 @@
 """
 A build manifest: every palette of a consumer and the targets of its projections, declared once.
 
-The consumer lists its palettes in one YAML file under the installed manifest schema. Each entry
-holds the settings that ``chromata-build`` accepts for one palette. Every path is relative to the
-resource root and must stay inside it, so a manifest means the same on every machine.
+The consumer lists its palettes in one YAML file under the installed manifest schema: the settings
+file of Chromata, ``chromata.yml``. Each entry holds the settings that ``chromata-build`` accepts
+for one palette. Every path is relative to the resource root and must stay inside it, so a manifest
+means the same on every machine and in either place of the settings file.
 """
 
 from __future__ import annotations
@@ -38,9 +39,9 @@ def _request(root: Path, entry: dict[str, Any], index: int) -> BuildRequest:
 
     return BuildRequest(
         spec=_confined(root, entry["spec"], f"{where}/spec"),
-        values_out=optional("values_out"),
-        roles_out=optional("roles_out"),
-        css_out=optional("css_out"),
+        values_out=optional("values_output"),
+        roles_out=optional("roles_output"),
+        css_out=optional("css_output"),
         css_pages=tuple(
             _confined(root, page, f"{where}/css_pages") for page in entry.get("css_pages", [])
         ),
@@ -73,7 +74,7 @@ def load_manifest(path: Path, root: Path) -> tuple[BuildRequest, ...]:
         If the file is missing, breaks the schema, or names a path outside ``root``.
     """
     if not path.is_file():
-        raise ManifestError(f"no such manifest: {path}")
+        raise ManifestError(f"no such settings file: {path}")
     try:
         with path.open(encoding="utf-8") as handle:
             data = yaml.safe_load(handle)

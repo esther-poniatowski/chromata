@@ -1,10 +1,12 @@
 """
 Generate deterministic LaTeX and CSS projections from palette specifications.
 
-``--spec`` projects one palette, configured by the options of this command. ``--manifest`` projects
-every palette listed in a build manifest, in one run with one exit status. ``--css-page``, or the
-``css_pages`` key of a manifest entry, refreshes the block marked with the palette's source label
-inside an existing web page, and leaves every byte outside that block unchanged.
+``--spec`` projects one palette, configured by the options of this command. Without ``--spec``,
+the command projects every palette listed in its settings file, ``chromata.yml``, a build manifest
+read from ``--config``, else from ``config/tools/chromata.yml`` or ``chromata.yml`` below the root,
+in one run with one exit status. ``--css-page``, or the ``css_pages`` key of a manifest entry,
+refreshes the block marked with the palette's source label inside an existing web page, and leaves
+every byte outside that block unchanged.
 
 Every input is checked before any target is written. The exit status is 0 when every target is
 current or written, 1 when ``--check`` finds a stale target, and 2 when an input is invalid.
@@ -25,14 +27,20 @@ from chromata.build import (
     write_targets,
 )
 from chromata.cli_resources import add_resource_argument, resource_resolver
+from chromata.cli_settings import (
+    SETTINGS_LOCATIONS,
+    add_root_argument,
+    locate_settings,
+    resolve_root,
+)
 from chromata.manifest import ManifestError, load_manifest
 from chromata.spec import SpecError
 
 #: Options that configure one palette, which a manifest entry declares instead.
 PER_PALETTE_OPTIONS: dict[str, str] = {
-    "values_out": "--values-out",
-    "roles_out": "--roles-out",
-    "css_out": "--css-out",
+    "values_output": "--values-output",
+    "roles_output": "--roles-output",
+    "css_output": "--css-output",
     "css_page": "--css-page",
     "source_label": "--source-label",
     "values_prefix": "--values-prefix",
@@ -59,24 +67,24 @@ def _source_label(value: str) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     """Return the command-line parser."""
-    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
-    inputs = parser.add_mutually_exclusive_group(required=True)
+    parser = argparse.ArgumentParser(
+        description=__doc__.strip().splitlines()[0],
+        allow_abbrev=False,   # a prefix would revive a retired name, such as --out
+    )
+    inputs = parser.add_mutually_exclusive_group()
     inputs.add_argument("--spec", type=Path, help="palette specification")
     inputs.add_argument(
-        "--manifest",
+        "-c",
+        "--config",
         type=Path,
-        help="build manifest listing every palette of the run and its targets",
+        help="settings file, a build manifest listing every palette of the run and its targets "
+             "(default: config/tools/chromata.yml or chromata.yml below the root)",
     )
-    parser.add_argument(
-        "--root",
-        required=True,
-        type=Path,
-        help="local resource root against which path references resolve",
-    )
+    add_root_argument(parser)
     add_resource_argument(parser)
-    parser.add_argument("--values-out", type=Path, help="target of the LaTeX value layer")
-    parser.add_argument("--roles-out", type=Path, help="target of the LaTeX role layer")
-    parser.add_argument("--css-out", type=Path, help="target of the standalone CSS block")
+    parser.add_argument("--values-output", type=Path, help="target of the LaTeX value layer")
+    parser.add_argument("--roles-output", type=Path, help="target of the LaTeX role layer")
+    parser.add_argument("--css-output", type=Path, help="target of the standalone CSS block")
     parser.add_argument(
         "--css-page",
         action="append",
@@ -105,6 +113,24 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _settings_file(args: argparse.Namespace, root: Path) -> Path:
+    """
+    Return the settings file of a run without ``--spec``.
+
+    Raises
+    ------
+    ManifestError
+        If the root holds two settings files, or none while ``--config`` is absent.
+    """
+    if args.config is not None:
+        return args.config
+    found = locate_settings(root)
+    if found is None:
+        places = " or ".join(str(root / location) for location in SETTINGS_LOCATIONS)
+        raise ManifestError(f"nothing to build: pass --spec or --config, or write {places}")
+    return found
+
+
 def _requests(args: argparse.Namespace, root: Path) -> tuple[BuildRequest, ...]:
     """
     Return the build requests of the run.
@@ -112,14 +138,14 @@ def _requests(args: argparse.Namespace, root: Path) -> tuple[BuildRequest, ...]:
     Raises
     ------
     ManifestError
-        If the manifest is invalid, or a per-palette option accompanies it.
+        If the settings file is absent or invalid, or a per-palette option accompanies it.
     """
-    if args.manifest is None:
+    if args.spec is not None:
         return (BuildRequest(
             spec=args.spec,
-            values_out=args.values_out,
-            roles_out=args.roles_out,
-            css_out=args.css_out,
+            values_out=args.values_output,
+            roles_out=args.roles_output,
+            css_out=args.css_output,
             css_pages=tuple(args.css_page),
             source_label=args.source_label,
             values_prefix=args.values_prefix or "",
@@ -129,13 +155,13 @@ def _requests(args: argparse.Namespace, root: Path) -> tuple[BuildRequest, ...]:
     given = [option for key, option in PER_PALETTE_OPTIONS.items() if getattr(args, key)]
     if given:
         raise ManifestError(f"{', '.join(given)}: declare per-palette settings in the manifest")
-    return load_manifest(args.manifest, root)
+    return load_manifest(_settings_file(args, root), root)
 
 
 def main(argv: list[str] | None = None) -> int:
     """Generate or check the requested projections."""
     args = build_parser().parse_args(argv)
-    root = args.root.resolve()
+    root = resolve_root(args.root)
     try:
         resolver = resource_resolver(root, args.resource)
         requests = _requests(args, root)
@@ -143,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"chromata-build: {error}", file=sys.stderr)
         return 2
 
-    plan = plan_build(requests, root, resolver, exhaustive_pages=args.manifest is not None)
+    plan = plan_build(requests, root, resolver, exhaustive_pages=args.spec is None)
     if plan.problems:
         for problem in plan.problems:
             print(f"chromata-build: {problem}", file=sys.stderr)
