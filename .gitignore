@@ -4,3 +4,6 @@
 /src/*.egg-info/
 __pycache__/
 *.py[cod]
+
+## State of Kleisis: the materialized schema closure and the staging folders
+.kleisis/

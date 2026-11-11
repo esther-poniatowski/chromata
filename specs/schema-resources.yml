@@ -1,0 +1,9 @@
+# Inputs of the schema closure of chromata; generated files remain outside this record.
+_schema: kleisis:schema-resources@2
+
+paths:
+  owned_schemas: src/chromata/schemas
+
+exports:
+  - chromata:build-manifest@1
+  - chromata:palette@1

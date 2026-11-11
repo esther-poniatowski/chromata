@@ -97,6 +97,10 @@ writing nothing, when a picture would leave that folder or overwrite a source pi
 Generated files name their source relative to `--root`. When the logical resource root differs
 from the desired provenance label, `--source-label` supplies that stable label explicitly.
 
+## Schema registry
+
+The [schema registry](specs/schema-registry.yml) maps each format whose schema Chromata ships to that schema file. Kleisis generates the registry from the [resource record](specs/schema-resources.yml): run `kleisis materialize --root .` after a schema changes, and `kleisis check --root .` to confirm that the registry is current. A repository whose files declare a Chromata format names Chromata as a dependency in its own resource record, at a pinned commit, so that Ekphrasis validates those files in Obsidian.
+
 ## Verification
 
 Install the development extras in a dedicated environment, then run:
