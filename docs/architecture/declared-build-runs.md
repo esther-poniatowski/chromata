@@ -10,7 +10,7 @@ without taking over the discovery of the consumer's files.
 
 1. **The consumer declares every input.** Without `--spec`, `chromata-build` reads a build
    manifest, a YAML record under the installed `build-manifest.schema.yaml`. The manifest is the
-   settings file of Chromata, `chromata.yml`, named by `--config` or read from
+   configuration file of Chromata, `chromata.yml`, named by `--config` or read from
    `config/tools/chromata.yml` or `chromata.yml` below the resource root, after the workspace
    [command-line conventions](https://github.com/esther-poniatowski/keystone/blob/main/docs/internals/cli-conventions.md).
    The manifest lists each palette with the settings that `chromata-build --spec` accepts.
@@ -18,7 +18,7 @@ without taking over the discovery of the consumer's files.
    through the manifest.
 2. **Manifest paths are relative to the resource root and stay inside it.** The resource root
    already resolves palette references and labels generated files. The same base therefore gives
-   one meaning to a manifest on every machine, in either place of the settings file.
+   one meaning to a manifest on every machine, in either place of the configuration file.
 3. **A marked page block belongs to its consumer, and only its body is generated.** `--css-page`,
    or the `css_pages` key of a manifest entry, names a page holding one block of the palette. The
    block opens with `/* palette: LABEL */`, where an optional note may follow ` -- `, and closes with

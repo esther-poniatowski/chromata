@@ -1,6 +1,6 @@
 # Schema of a build manifest, written as JSON Schema (draft 2020-12) in YAML.
 #
-# A consumer declares in one manifest, its settings file chromata.yml, every palette that
+# A consumer declares in one manifest, its configuration file chromata.yml, every palette that
 # chromata-build projects in one run, with the targets of each projection. Every path is relative
 # to the resource root.
 

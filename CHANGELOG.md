@@ -14,9 +14,10 @@ Each renamed name loses its former name in this release, without an alias.
 - `-r`, `--root` is optional on the three commands. Without it, the root is `CHROMATA_ROOT`, else
   the nearest ancestor of the current folder that holds `config/tools/chromata.yml` or
   `chromata.yml`, else the current folder.
-- Without `--spec`, `chromata-build` reads its settings file, the build manifest `chromata.yml`,
-  from `config/tools/chromata.yml` or `chromata.yml` below the root. A root holding both is an
-  error that names both; a root holding neither is an error, since nothing is declared to build.
+- Without `--spec`, `chromata-build` reads its configuration file, the build manifest
+  `chromata.yml`, from `config/tools/chromata.yml` or `chromata.yml` below the root. A root
+  holding both is an error that names both; a root holding neither is an error, since nothing is
+  declared to build.
 - `chromata-recolour` stops with status 2, writing nothing, when a repainted picture would leave
   `--output-dir` or overwrite a source picture.
 

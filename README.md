@@ -48,7 +48,7 @@ chromata-recolour --spec style/palette.yml --source images/source --output-dir i
 ```
 
 Every command resolves its resource root in this order: `-r`, `--root`; the environment variable
-`CHROMATA_ROOT`; the nearest ancestor of the current folder that holds the settings file
+`CHROMATA_ROOT`; the nearest ancestor of the current folder that holds the configuration file
 `chromata.yml`, in its `config/tools/` or at its own level; the current folder. A path given on the
 command line is relative to the current folder.
 
@@ -68,8 +68,8 @@ marks the block with `/* palette: LABEL */` and `/* palette: end */`, where `LAB
 label of the palette. A refresh rewrites only the lines between the markers, and fails when a
 marker is missing or duplicated.
 
-The settings file of Chromata, `chromata.yml`, is a build manifest: it lists every palette of a
-consumer, with the settings of each, so that one run builds or checks all of them with one exit
+The configuration file of Chromata, `chromata.yml`, is a build manifest: it lists every palette of
+a consumer, with the settings of each, so that one run builds or checks all of them with one exit
 status. Without `--spec`, `chromata-build` reads the file named by `-c`, `--config`, else
 `config/tools/chromata.yml` or `chromata.yml` below the root. A root holding both files is an
 error that names both, and a root holding neither leaves nothing to build:
@@ -87,7 +87,7 @@ palettes:
     css_pages: [site/index.html]
 ```
 
-The paths of the settings file are relative to the root, wherever the file lies. The
+The paths of the configuration file are relative to the root, wherever the file lies. The
 [declared-build-runs record](docs/architecture/declared-build-runs.md) fixes the manifest, the
 marker syntax and the exit statuses.
 

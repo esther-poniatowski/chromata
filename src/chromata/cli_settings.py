@@ -1,5 +1,5 @@
 """
-Shared command-line resolution of the resource root and of the settings file.
+Shared command-line resolution of the resource root and of the configuration file.
 
 Every command resolves its root in one order, and stops at the first answer: the option ``--root``,
 the environment variable ``CHROMATA_ROOT``, the nearest ancestor of the current folder that holds
@@ -19,10 +19,10 @@ from chromata.manifest import ManifestError
 #: Environment variable naming the resource root.
 ROOT_ENV = "CHROMATA_ROOT"
 
-#: Name of the settings file of Chromata.
+#: Name of the configuration file of Chromata.
 SETTINGS_FILENAME = "chromata.yml"
 
-#: Places of the settings file below a root; a root holding both is an error.
+#: Places of the configuration file below a root; a root holding both is an error.
 SETTINGS_LOCATIONS = (Path("config") / "tools" / SETTINGS_FILENAME, Path(SETTINGS_FILENAME))
 
 
@@ -39,7 +39,7 @@ def add_root_argument(parser: argparse.ArgumentParser) -> None:
 
 
 def _holds_settings(directory: Path) -> bool:
-    """Return whether ``directory`` holds a settings file at one of its places."""
+    """Return whether ``directory`` holds a configuration file at one of its places."""
     return any((directory / location).is_file() for location in SETTINGS_LOCATIONS)
 
 
@@ -56,7 +56,7 @@ def resolve_root(option: Path | None) -> Path:
     -------
     Path
         ``--root``, else ``CHROMATA_ROOT``, else the nearest ancestor of the current folder that
-        holds a settings file, else the current folder.
+        holds a configuration file, else the current folder.
     """
     if option is not None:
         return option.resolve()
@@ -72,7 +72,7 @@ def resolve_root(option: Path | None) -> Path:
 
 def locate_settings(root: Path) -> Path | None:
     """
-    Return the settings file below ``root``, or ``None`` when the root holds none.
+    Return the configuration file below ``root``, or ``None`` when the root holds none.
 
     Raises
     ------
@@ -81,5 +81,7 @@ def locate_settings(root: Path) -> Path | None:
     """
     found = [root / location for location in SETTINGS_LOCATIONS if (root / location).is_file()]
     if len(found) > 1:
-        raise ManifestError(f"two settings files compete: {found[0]} and {found[1]}; keep one")
+        raise ManifestError(
+            f"two configuration files compete: {found[0]} and {found[1]}; keep one"
+        )
     return found[0] if found else None

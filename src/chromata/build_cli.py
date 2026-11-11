@@ -2,9 +2,9 @@
 Generate deterministic LaTeX and CSS projections from palette specifications.
 
 ``--spec`` projects one palette, configured by the options of this command. Without ``--spec``,
-the command projects every palette listed in its settings file, ``chromata.yml``, a build manifest
-read from ``--config``, else from ``config/tools/chromata.yml`` or ``chromata.yml`` below the root,
-in one run with one exit status. ``--css-page``, or the ``css_pages`` key of a manifest entry,
+the command projects every palette listed in its configuration file, ``chromata.yml``, a build
+manifest read from ``--config``, else from ``config/tools/chromata.yml`` or ``chromata.yml``
+below the root, in one run with one exit status. ``--css-page``, or the ``css_pages`` key of a manifest entry,
 refreshes the block marked with the palette's source label inside an existing web page, and leaves
 every byte outside that block unchanged.
 
@@ -77,8 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
         "-c",
         "--config",
         type=Path,
-        help="settings file, a build manifest listing every palette of the run and its targets "
-             "(default: config/tools/chromata.yml or chromata.yml below the root)",
+        help="configuration file, a build manifest listing every palette of the run and its "
+             "targets (default: config/tools/chromata.yml or chromata.yml below the root)",
     )
     add_root_argument(parser)
     add_resource_argument(parser)
@@ -115,12 +115,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _settings_file(args: argparse.Namespace, root: Path) -> Path:
     """
-    Return the settings file of a run without ``--spec``.
+    Return the configuration file of a run without ``--spec``.
 
     Raises
     ------
     ManifestError
-        If the root holds two settings files, or none while ``--config`` is absent.
+        If the root holds two configuration files, or none while ``--config`` is absent.
     """
     if args.config is not None:
         return args.config
@@ -138,7 +138,7 @@ def _requests(args: argparse.Namespace, root: Path) -> tuple[BuildRequest, ...]:
     Raises
     ------
     ManifestError
-        If the settings file is absent or invalid, or a per-palette option accompanies it.
+        If the configuration file is absent or invalid, or a per-palette option accompanies it.
     """
     if args.spec is not None:
         return (BuildRequest(

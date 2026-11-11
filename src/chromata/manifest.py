@@ -4,7 +4,7 @@ A build manifest: every palette of a consumer and the targets of its projections
 The consumer lists its palettes in one YAML file under the installed manifest schema: the settings
 file of Chromata, ``chromata.yml``. Each entry holds the settings that ``chromata-build`` accepts
 for one palette. Every path is relative to the resource root and must stay inside it, so a manifest
-means the same on every machine and in either place of the settings file.
+means the same on every machine and in either place of the configuration file.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ def load_manifest(path: Path, root: Path) -> tuple[BuildRequest, ...]:
         If the file is missing, breaks the schema, or names a path outside ``root``.
     """
     if not path.is_file():
-        raise ManifestError(f"no such settings file: {path}")
+        raise ManifestError(f"no such configuration file: {path}")
     try:
         with path.open(encoding="utf-8") as handle:
             data = yaml.safe_load(handle)
