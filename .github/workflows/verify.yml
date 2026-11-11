@@ -33,7 +33,7 @@ jobs:
           /tmp/chromata-wheel/bin/python -m pip install dist/chromata-*.whl
           mkdir -p /tmp/chromata-smoke
           printf '%s\n' \
-            'schema_version: 1' \
+            '_schema: chromata:palette@1' \
             'level: hues' \
             'layers:' \
             '  foundation:' \
@@ -49,11 +49,11 @@ jobs:
             --root /tmp/chromata-smoke \
             --spec /tmp/chromata-smoke/hues.palette.yml \
             --check
-          printf '%s\n' 'schema_version: 1' 'palettes:' '  - spec: hues.palette.yml' \
+          printf '%s\n' '_schema: chromata:build-manifest@1' 'palettes:' '  - spec: hues.palette.yml' \
             > /tmp/chromata-smoke/chromata.yml
           /tmp/chromata-wheel/bin/chromata-build \
             --root /tmp/chromata-smoke \
-            --manifest /tmp/chromata-smoke/chromata.yml \
+            --config /tmp/chromata-smoke/chromata.yml \
             --check
           /tmp/chromata-wheel/bin/chromata-check --help
           /tmp/chromata-wheel/bin/chromata-recolour --help

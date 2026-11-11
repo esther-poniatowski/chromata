@@ -80,7 +80,7 @@ chromata-build --config settings/palettes.yml --check
 ```
 
 ```yaml
-schema_version: 1
+_schema: chromata:build-manifest@1
 palettes:
   - spec: style/hues/palette.yml
   - spec: style/palette.yml

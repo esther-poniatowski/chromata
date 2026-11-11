@@ -9,10 +9,10 @@ import pytest
 
 from chromata import build_cli, page
 from chromata.page import PageError, label_problem, marked_blocks, refresh_page
-from chromata.schemas import MANIFEST_SCHEMA, schema_violations
+from chromata.schemas import MANIFEST_SCHEMA, PALETTE_SCHEMA, schema_violations
 
 HUES = """
-schema_version: 1
+_schema: chromata:palette@1
 level: hues
 layers:
   base:
@@ -24,7 +24,7 @@ layers:
 """
 
 STYLE = """
-schema_version: 1
+_schema: chromata:palette@1
 level: style
 extends: hues/palette.yml
 roles:
@@ -40,7 +40,7 @@ css:
 """
 
 CONCEPTS = """
-schema_version: 1
+_schema: chromata:palette@1
 level: concepts
 extends: hues/palette.yml
 roles:
@@ -82,7 +82,7 @@ def _consumer(root: Path) -> None:
 
 
 MANIFEST = """
-schema_version: 1
+_schema: chromata:build-manifest@1
 palettes:
   - spec: hues/palette.yml
   - spec: style/palette.yml
@@ -230,7 +230,7 @@ def test_manifest_refreshes_two_palettes_in_one_page(tmp_path: Path) -> None:
         ("chromata.yml", "concepts/roles.tex", "hues/palette.yml", "palette input"),
         ("chromata.yml", "spec: concepts/palette.yml", "spec: ../outside/palette.yml",
          "escapes the resource root"),
-        ("chromata.yml", "schema_version: 1", "schema_version: 2", "schema violation"),
+        ("chromata.yml", "chromata:build-manifest@1", "chromata:build-manifest@2", "schema violation"),
         ("chromata.yml", "[site/index.html]", "[site/absent.html]", "no such page"),
     ],
 )
@@ -291,7 +291,7 @@ def test_retired_option_names_are_rejected(
 
 def test_retired_manifest_keys_break_the_schema() -> None:
     entry = {"spec": "style/palette.yml", "roles_out": "out/roles.tex"}
-    assert schema_violations(MANIFEST_SCHEMA, {"schema_version": 1, "palettes": [entry]}) != []
+    assert schema_violations(MANIFEST_SCHEMA, {"_schema": "chromata:build-manifest@1", "palettes": [entry]}) != []
 
 
 @pytest.mark.parametrize("place", ["chromata.yml", "config/tools/chromata.yml"])
@@ -369,8 +369,49 @@ def test_manifest_schema_admits_every_per_palette_setting() -> None:
         "roles_prefix": "house-",
         "tex_names": {"pagebg": "page-ground"},
     }
-    assert schema_violations(MANIFEST_SCHEMA, {"schema_version": 1, "palettes": [entry]}) == []
-    assert schema_violations(MANIFEST_SCHEMA, {"schema_version": 1, "palettes": [
+    assert schema_violations(MANIFEST_SCHEMA, {"_schema": "chromata:build-manifest@1", "palettes": [entry]}) == []
+    assert schema_violations(MANIFEST_SCHEMA, {"_schema": "chromata:build-manifest@1", "palettes": [
         {**entry, "spec": "/absolute/palette.yml"}]}) != []
-    assert schema_violations(MANIFEST_SCHEMA, {"schema_version": 1, "palettes": [
+    assert schema_violations(MANIFEST_SCHEMA, {"_schema": "chromata:build-manifest@1", "palettes": [
         {**entry, "source_label": "bad*/label"}]}) != []
+
+
+FORMATS = [
+    (PALETTE_SCHEMA, "chromata:palette@1", {"level": "style"}),
+    (MANIFEST_SCHEMA, "chromata:build-manifest@1", {"palettes": [{"spec": "a/palette.yml"}]}),
+]
+
+
+@pytest.mark.parametrize(("schema", "identifier", "body"), FORMATS)
+def test_the_identifier_of_the_format_is_accepted(
+    schema: str, identifier: str, body: dict[str, object]
+) -> None:
+    assert schema_violations(schema, {"_schema": identifier, **body}) == []
+
+
+@pytest.mark.parametrize(("schema", "identifier", "body"), FORMATS)
+@pytest.mark.parametrize(
+    ("declared", "message"),
+    [
+        ({}, "_schema: absent; write _schema: {identifier} as the first key"),
+        ({"_schema": "chromata:other@1"}, "_schema: chromata:other@1, expected {identifier}"),
+        ({"schema_version": 1}, "schema_version: retired; write _schema: {identifier} as the first key"),
+    ],
+)
+def test_a_record_of_another_format_names_the_value_to_write(
+    schema: str, identifier: str, body: dict[str, object], declared: dict[str, object],
+    message: str,
+) -> None:
+    expected = message.format(identifier=identifier)
+    assert schema_violations(schema, {**declared, **body}) == [expected]
+
+
+def test_a_file_of_the_retired_format_stops_with_status_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    manifest = _write(tmp_path / "chromata.yml", "schema_version: 1\npalettes: []\n")
+    palette = _write(tmp_path / "hues.palette.yml", "schema_version: 1\nlevel: hues\n")
+    assert build_cli.main(["--root", str(tmp_path), "--config", str(manifest)]) == 2
+    assert "write _schema: chromata:build-manifest@1" in capsys.readouterr().err
+    assert build_cli.main(["--root", str(tmp_path), "--spec", str(palette)]) == 2
+    assert "write _schema: chromata:palette@1" in capsys.readouterr().err

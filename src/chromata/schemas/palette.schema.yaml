@@ -14,10 +14,10 @@ description: >-
   tests state the separation and contrast that the tokens must reach.
 type: object
 additionalProperties: false
-required: [schema_version, level]
+required: [_schema, level]
 properties:
-  schema_version:
-    const: 1
+  _schema:
+    const: chromata:palette@1
   level:
     enum: [hues, style, concepts]
     description: >-

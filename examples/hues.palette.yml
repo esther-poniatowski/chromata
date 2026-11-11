@@ -1,5 +1,5 @@
 # valid hue-library example; chromata-build generates colors-values.tex beside this file
-schema_version: 1
+_schema: chromata:palette@1
 level: hues
 
 layers:

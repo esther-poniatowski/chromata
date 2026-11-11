@@ -1,5 +1,5 @@
 # valid concept-binding example; resolve extends from the examples folder
-schema_version: 1
+_schema: chromata:palette@1
 level: concepts
 extends: style.palette.yml
 

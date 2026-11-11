@@ -25,7 +25,7 @@ from chromata.spec import (
 )
 
 TOY_HUES = """
-schema_version: 1
+_schema: chromata:palette@1
 level: hues
 layers:
   toy:
@@ -41,7 +41,7 @@ layers:
 """
 
 SPEC = """
-schema_version: 1
+_schema: chromata:palette@1
 level: concepts
 extends: toyhues/palette.yml
 roles:
@@ -150,7 +150,7 @@ def test_an_extending_palette_names_the_tokens_of_its_base(tmp_path: Path) -> No
     _spec(tmp_path)
     (tmp_path / "child").mkdir()
     child = _spec(tmp_path / "child", (
-        "schema_version: 1\nlevel: concepts\nextends: palette.yml\n"
+        "_schema: chromata:palette@1\nlevel: concepts\nextends: palette.yml\n"
         "roles:\n  borrowed: {of: accent, use: a role of the base}\n"), root=tmp_path)
     assert load_spec(child, tmp_path).values()["borrowed"] == "0000FF"
 
@@ -172,7 +172,7 @@ def test_an_extending_palette_accepts_a_descriptive_palette_filename(tmp_path: P
     base.write_text(TOY_HUES, encoding="utf-8")
     child = tmp_path / "house-style.palette.yml"
     child.write_text(
-        "schema_version: 1\nlevel: concepts\nextends: house-hues.palette.yml\n"
+        "_schema: chromata:palette@1\nlevel: concepts\nextends: house-hues.palette.yml\n"
         "roles:\n  borrowed: {of: cool, use: a role of the base}\n",
         encoding="utf-8",
     )
@@ -330,7 +330,7 @@ def test_recolour_finds_its_root_from_the_current_folder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     spec = _spec(tmp_path)
-    (tmp_path / "chromata.yml").write_text("schema_version: 1\npalettes: []\n", encoding="utf-8")
+    (tmp_path / "chromata.yml").write_text("_schema: chromata:build-manifest@1\npalettes: []\n", encoding="utf-8")
     _sources(tmp_path / "source")
     monkeypatch.delenv("CHROMATA_ROOT", raising=False)
     monkeypatch.chdir(tmp_path / "source")
@@ -540,7 +540,7 @@ def test_mapped_resolver_loads_a_package_palette_and_its_sibling(tmp_path: Path)
     hues.write_text(TOY_HUES, encoding="utf-8")
     house = package / "house.palette.yml"
     house.write_text(
-        "schema_version: 1\nlevel: style\nextends: hues.palette.yml\n"
+        "_schema: chromata:palette@1\nlevel: style\nextends: hues.palette.yml\n"
         "roles:\n  identity: {of: cool, use: identity}\n",
         encoding="utf-8",
     )
@@ -548,7 +548,7 @@ def test_mapped_resolver_loads_a_package_palette_and_its_sibling(tmp_path: Path)
     project.mkdir()
     concepts = project / "concepts.palette.yml"
     concepts.write_text(
-        "schema_version: 1\nlevel: concepts\nextends: diakosmos:house.palette.yml\n"
+        "_schema: chromata:palette@1\nlevel: concepts\nextends: diakosmos:house.palette.yml\n"
         "roles:\n  result: {of: identity, use: result}\n",
         encoding="utf-8",
     )
@@ -581,14 +581,14 @@ def test_load_spec_rejects_extension_cycles(tmp_path: Path) -> None:
     second_dir = tmp_path / "second"
     second_dir.mkdir()
     second = second_dir / "palette.yml"
-    first.write_text("schema_version: 1\nlevel: concepts\nextends: second/palette.yml\n", encoding="utf-8")
-    second.write_text("schema_version: 1\nlevel: concepts\nextends: palette.yml\n", encoding="utf-8")
+    first.write_text("_schema: chromata:palette@1\nlevel: concepts\nextends: second/palette.yml\n", encoding="utf-8")
+    second.write_text("_schema: chromata:palette@1\nlevel: concepts\nextends: palette.yml\n", encoding="utf-8")
     with pytest.raises(SpecError, match="cycle"):
         load_spec(first, tmp_path)
 
 
 HUES = """
-schema_version: 1
+_schema: chromata:palette@1
 level: hues
 layers:
   sama:
@@ -601,7 +601,7 @@ layers:
 """
 
 CONCEPTS = """
-schema_version: 1
+_schema: chromata:palette@1
 level: concepts
 extends: hues/palette.yml
 roles:

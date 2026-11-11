@@ -14,10 +14,10 @@ description: >-
   of the palettes and pages of a run: Chromata never searches the disk for them.
 type: object
 additionalProperties: false
-required: [schema_version, palettes]
+required: [_schema, palettes]
 properties:
-  schema_version:
-    const: 1
+  _schema:
+    const: chromata:build-manifest@1
   palettes:
     type: array
     minItems: 1

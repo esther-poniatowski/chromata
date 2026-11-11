@@ -1,5 +1,5 @@
 # valid house-style example; resolve extends from the examples folder
-schema_version: 1
+_schema: chromata:palette@1
 level: style
 extends: hues.palette.yml
 

@@ -22,6 +22,10 @@ Each renamed name loses its former name in this release, without an alias.
   `--output-dir` or overwrite a source picture.
 
 ### Changed
+- A palette names its format under `_schema`, as its first key, with the value `chromata:palette@1`,
+  and a build manifest with the value `chromata:build-manifest@1`. The key `schema_version` is
+  retired: a command stops with status 2 and names the value to write. A file without the key, or
+  with another value, stops the same way.
 - `chromata-build --manifest` is renamed `-c`, `--config`.
 - `chromata-build --values-out`, `--roles-out` and `--css-out` are renamed `--values-output`,
   `--roles-output` and `--css-output`, and the manifest keys `values_out`, `roles_out` and
